@@ -18,14 +18,6 @@ img_url = "https://github.com/hyeongyunkim/teamproject/raw/main/petfuneral.png"
 response = requests.get(img_url)
 img = Image.open(BytesIO(response.content))
 
-st.image(img, use_column_width=True)
-img_path = "https://github.com/hyeongyunkim/teamproject/raw/main/petfuneral.png"
-
-if os.path.exists(img_path):
-    st.image(img_path, use_column_width=True)
-else:
-    st.warning("이미지 파일이 존재하지 않습니다. PNG 파일을 같은 폴더에 넣어주세요.")
-
 # 부고장
 st.header("📜 부고장")
 pet_name = "초코"
