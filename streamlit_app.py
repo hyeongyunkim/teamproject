@@ -11,7 +11,7 @@ st.subheader("In Loving Memory")
 st.write("소중한 반려견을 추모할 수 있는 공간입니다.")
 
 # 추모 이미지 (절대 경로 방식)
-img_path = "C:\\Users\\kevin\\project\\images\\A_webpage_designed_for_a_pet_funeral_and_memorial_.png"
+img_path = "teamproject/petfuneral.png"
 if os.path.exists(img_path):
     st.image(img_path, use_column_width=True)
 else:
