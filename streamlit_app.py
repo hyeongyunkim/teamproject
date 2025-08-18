@@ -1,6 +1,9 @@
 import streamlit as st
 import os
 from datetime import datetime
+import requests
+from PIL import Image
+from io import BytesIO
 
 # 페이지 기본 설정
 st.set_page_config(page_title="반려견 추모관", page_icon="🐾", layout="centered")
@@ -11,6 +14,11 @@ st.subheader("In Loving Memory")
 st.write("소중한 반려견을 추모할 수 있는 공간입니다.")
 
 # 추모 이미지 (절대 경로 방식)
+img_url = "https://github.com/hyeongyunkim/teamproject/raw/main/petfuneral.png"
+response = requests.get(img_url)
+img = Image.open(BytesIO(response.content))
+
+st.image(img, use_column_width=True)
 img_path = "https://github.com/hyeongyunkim/teamproject/raw/main/petfuneral.png"
 
 if os.path.exists(img_path):
