@@ -1,4 +1,5 @@
 import streamlit as st
+import os
 from datetime import datetime
 
 # 페이지 기본 설정
@@ -9,8 +10,12 @@ st.title("🐾 반려견 장례식 추모 웹페이지")
 st.subheader("In Loving Memory")
 st.write("소중한 반려견을 추모할 수 있는 공간입니다.")
 
-# 추모 이미지
-st.image("A_webpage_designed_for_a_pet_funeral_and_memorial_.png", use_column_width=True)
+# 추모 이미지 (절대 경로 방식)
+img_path = os.path.join(os.getcwd(), "A_webpage_designed_for_a_pet_funeral_and_memorial_.png")
+if os.path.exists(img_path):
+    st.image(img_path, use_column_width=True)
+else:
+    st.warning("이미지 파일이 존재하지 않습니다. PNG 파일을 같은 폴더에 넣어주세요.")
 
 # 부고장
 st.header("📜 부고장")
