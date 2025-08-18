@@ -50,18 +50,34 @@ try:
 except FileNotFoundError:
     st.info("아직 등록된 메시지가 없습니다.")
 
-# --- 온라인 추모관 (사진 업로드, 중앙 정렬) ---
-st.markdown("<h2 style='text-align: center;'>🖼️ 온라인 추모관</h2>", unsafe_allow_html=True)
+# 업로드 폴더 만들기 (존재하지 않으면)
+if not os.path.exists("uploaded_images"):
+    os.makedirs("uploaded_images")
+
+st.header("🖼️ 온라인 추모관 (갤러리)")
 uploaded_file = st.file_uploader("사진 업로드", type=["png", "jpg", "jpeg"])
 if uploaded_file is not None:
-    # 업로드 파일을 base64로 변환하여 HTML로 중앙 정렬
-    file_bytes = uploaded_file.read()
-    encoded = base64.b64encode(file_bytes).decode()
-    st.markdown(
-        f"""
-        <div style='text-align: center;'>
-            <img src="data:image/png;base64,{encoded}" width="300">
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+    # 서버에 저장
+    save_path = os.path.join("uploaded_images", uploaded_file.name)
+    with open(save_path, "wb") as f:
+        f.write(uploaded_file.getbuffer())
+    
+# 갤러리 표시
+st.subheader("추모 사진 갤러리")
+image_files = os.listdir("uploaded_images")
+
+# 이미지가 있으면 갤러리 형식으로 3열로 표시
+if image_files:
+    cols = st.columns(3)
+    for idx, img_file in enumerate(image_files):
+        img_path = os.path.join("uploaded_images", img_file)
+        # base64로 변환해서 HTML로 중앙 정렬
+        with open(img_path, "rb") as f:
+            encoded = base64.b64encode(f.read()).decode()
+        with cols[idx % 3]:
+            st.markdown(
+                f'<img src="data:image/png;base64,{encoded}" width="200">',
+                unsafe_allow_html=True
+            )
+else:
+    st.info("아직 업로드된 사진이 없습니다.")
