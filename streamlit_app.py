@@ -15,8 +15,9 @@ st.write("소중한 반려견을 추모할 수 있는 공간입니다.")
 
 # 추모 이미지 (절대 경로 방식)
 img_url = "https://github.com/hyeongyunkim/teamproject/raw/main/petfuneral.png"
-response = requests.get(img_url)
-img = Image.open(BytesIO(response.content))
+st.image(img_url, caption="추모 이미지", use_column_width=True)
+
+
 
 # 부고장
 st.header("📜 부고장")
