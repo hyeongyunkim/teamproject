@@ -13,7 +13,7 @@ menu = st.sidebar.selectbox(
 )
 
 # --- 1페이지: 부고장 + 방명록 + 추모관 ---
-if menu == "부고장, 방명록, 추모관":
+if menu == "부고장 + 방명록 + 추모관":
     st.markdown("<h1 style='text-align: center;'>🐾 Pet Memorialization 🐾</h1>", unsafe_allow_html=True)
     st.markdown("<h3 style='text-align: center;'>In Loving Memory</h3>", unsafe_allow_html=True)
     st.markdown("<p style='text-align: center;'>소중한 반려견을 추모할 수 있는 공간입니다</p>", unsafe_allow_html=True)
@@ -96,7 +96,7 @@ if menu == "부고장, 방명록, 추모관":
         st.info("아직 업로드된 사진이 없습니다.")
 
 # --- 2페이지: 장례식 실시간 스트리밍 ---
-elif menu == "장례식":
+elif menu == "장례식 실시간 스트리밍":
     st.header("📺 장례식 실시간 스트리밍 (원격 조문 지원)")
     st.markdown("아래에 실시간 스트리밍 영상을 삽입할 수 있습니다 (YouTube, Zoom, OBS 등 연동).")
     video_url = st.text_input("YouTube 영상 URL 입력", "https://www.youtube.com/embed/dQw4w9WgXcQ")
