@@ -48,7 +48,7 @@ for idx, line in enumerate(lines):
         lines.pop(idx)
         with open("guestbook.txt", "w", encoding="utf-8") as f:
             f.writelines(lines)
-        st.experimental_rerun()  # 삭제 후 새로고침
+        st.rerun()
 
 # --- 온라인 추모관 (갤러리 + 삭제 기능) ---
 st.markdown("<h2>🖼️ 온라인 추모관</h2>", unsafe_allow_html=True)
@@ -79,6 +79,6 @@ if image_files:
             st.markdown(f'<img src="data:image/png;base64,{encoded}" width="200">', unsafe_allow_html=True)
             if st.button(f"삭제 {img_file}", key=f"delete_img_{img_file}"):
                 os.remove(img_path)
-                st.experimental_rerun()
+                st.rerun()
 else:
     st.info("아직 업로드된 사진이 없습니다.")
