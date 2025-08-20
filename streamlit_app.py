@@ -6,16 +6,14 @@ from datetime import datetime
 # -------------------- 페이지 기본 설정 --------------------
 st.set_page_config(page_title="반려견 추모관", page_icon="🐾", layout="centered")
 
-# -------------------- CSS 스타일 --------------------
+# -------------------- CSS 스타일 (petfuneral.png와 색감 맞춤) --------------------
 st.markdown("""
     <style>
     body {
         background-color: #FDF6EC;
         color: #4B3832;
     }
-    h1, h2, h3 {
-        color: #4B3832 !important;
-    }
+    h1, h2, h3 { color: #4B3832 !important; }
     .stButton>button {
         background-color: #CFA18D;
         color: white;
@@ -24,26 +22,37 @@ st.markdown("""
         border: none;
         font-size: 14px;
     }
-    .stButton>button:hover {
-        background-color: #D9A7A0;
-        color: #fff;
-    }
+    .stButton>button:hover { background-color: #D9A7A0; color: #fff; }
     .stTextInput>div>div>input, .stTextArea textarea {
         background-color: #fff;
         border: 1px solid #CFA18D;
         border-radius: 10px;
     }
-    .stSidebar {
-        background-color: #FAE8D9;
-    }
+    .stSidebar { background-color: #FAE8D9; }
     </style>
 """, unsafe_allow_html=True)
 
-# -------------------- 네비게이션 메뉴 --------------------
+# -------------------- 사이드바 메뉴 --------------------
 menu = st.sidebar.selectbox(
     "메뉴 선택",
     ["부고장 + 방명록 + 추모관", "장례식 실시간 스트리밍", "기부 / 꽃바구니 주문"]
 )
+
+# -------------------- 경로 --------------------
+UPLOAD_FOLDER = "uploaded_images"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+# -------------------- 유틸: 이미지 리스트 만들기 (대표 + 업로드) --------------------
+def build_image_list():
+    base_img = "https://github.com/hyeongyunkim/teamproject/raw/main/petfuneral.png"
+    uploaded = [
+        os.path.join(UPLOAD_FOLDER, f)
+        for f in os.listdir(UPLOAD_FOLDER)
+        if f.lower().endswith((".png", ".jpg", ".jpeg"))
+    ]
+    # 최신 업로드가 뒤로 가지 않도록 파일명 기준 정렬(원하면 mtime으로 변경 가능)
+    uploaded = sorted(uploaded)
+    return [base_img] + uploaded
 
 # -------------------- 1페이지: 부고장 + 방명록 + 추모관 --------------------
 if menu == "부고장 + 방명록 + 추모관":
@@ -51,20 +60,30 @@ if menu == "부고장 + 방명록 + 추모관":
     st.markdown("<h3 style='text-align: center;'>In Loving Memory</h3>", unsafe_allow_html=True)
     st.markdown("<p style='text-align: center;'>소중한 반려견을 추모할 수 있는 공간입니다</p>", unsafe_allow_html=True)
 
-    # -------------------- 대표 이미지 (슬라이드쇼 + 클릭 확대) --------------------
-    from streamlit_carousel import carousel
+    # -------------------- 대표 이미지 슬라이드 + 확대 (순수 Streamlit) --------------------
+    img_list = build_image_list()
+    n = len(img_list)
 
-    img_list = [
-        "https://github.com/hyeongyunkim/teamproject/raw/main/petfuneral.png",
-        # 추후 추가 가능
-        # "https://path/to/second_image.jpg",
-    ]
-    carousel_items = [{"img": url, "title": "추억의 순간"} for url in img_list]
+    if "carousel_idx" not in st.session_state:
+        st.session_state.carousel_idx = 0
+    # 범위 보정
+    st.session_state.carousel_idx %= max(n, 1)
 
-    selected = carousel(items=carousel_items, height=400)
-    if selected:
-        with st.expander("🔍 크게 보기", expanded=False):
-            st.image(selected["img"], use_column_width=True)
+    nav_prev, img_col, nav_next = st.columns([1,6,1])
+    with nav_prev:
+        if st.button("◀", key="carousel_prev"):
+            st.session_state.carousel_idx = (st.session_state.carousel_idx - 1) % n
+    with img_col:
+        st.image(img_list[st.session_state.carousel_idx], use_container_width=True,
+                 caption=f"{st.session_state.carousel_idx+1} / {n}")
+    with nav_next:
+        if st.button("▶", key="carousel_next"):
+            st.session_state.carousel_idx = (st.session_state.carousel_idx + 1) % n
+
+    # 확대 보기 (모달)
+    if st.button("🔍 크게 보기", key="carousel_zoom"):
+        with st.modal("대표 이미지 크게 보기"):
+            st.image(img_list[st.session_state.carousel_idx], use_column_width=True)
 
     # -------------------- 부고장 --------------------
     st.markdown("<h2 style='text-align: center;'>📜 부고장</h2>", unsafe_allow_html=True)
@@ -98,7 +117,6 @@ if menu == "부고장 + 방명록 + 추모관":
             st.warning("이름과 메시지를 입력해주세요.")
 
     st.markdown("<h3 style='text-align: center;'>📖 추모 메시지 모음</h3>", unsafe_allow_html=True)
-
     try:
         with open("guestbook.txt", "r", encoding="utf-8") as f:
             lines = f.readlines()
@@ -132,17 +150,14 @@ if menu == "부고장 + 방명록 + 추모관":
                 )
             with col2:
                 if st.button("❌", key=f"delete_msg_{idx}"):
-                    lines.pop(len(lines)-1-idx)
+                    # 최신 메시지가 위에 보이므로 실제 인덱스 보정
+                    lines.pop(len(lines) - 1 - idx)
                     with open("guestbook.txt", "w", encoding="utf-8") as f:
                         f.writelines(lines)
                     st.rerun()
 
-    # -------------------- 온라인 추모관 --------------------
+    # -------------------- 온라인 추모관 (업로드/삭제) --------------------
     st.markdown("<h2>🖼️ 온라인 추모관</h2>", unsafe_allow_html=True)
-    UPLOAD_FOLDER = "uploaded_images"
-    if not os.path.exists(UPLOAD_FOLDER):
-        os.makedirs(UPLOAD_FOLDER)
-
     uploaded_file = st.file_uploader("사진 업로드", type=["png", "jpg", "jpeg"])
     if uploaded_file is not None:
         unique_filename = f"{uuid.uuid4()}_{uploaded_file.name}"
@@ -152,7 +167,10 @@ if menu == "부고장 + 방명록 + 추모관":
         st.success(f"{uploaded_file.name} 업로드 완료!")
         st.rerun()
 
-    image_files = os.listdir(UPLOAD_FOLDER)
+    image_files = sorted([
+        f for f in os.listdir(UPLOAD_FOLDER)
+        if f.lower().endswith((".png", ".jpg", ".jpeg"))
+    ])
     if image_files:
         cols_count = 3 if len(image_files) >= 3 else max(1, len(image_files))
         cols = st.columns(cols_count)
@@ -161,7 +179,8 @@ if menu == "부고장 + 방명록 + 추모관":
             with cols[idx % cols_count]:
                 st.image(img_path, width=200, caption="🌸 추억의 사진 🌸")
                 if st.button("삭제", key=f"delete_img_{idx}"):
-                    os.remove(img_path)
+                    if os.path.exists(img_path):
+                        os.remove(img_path)
                     st.rerun()
     else:
         st.info("아직 업로드된 사진이 없습니다.")
