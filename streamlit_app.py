@@ -6,76 +6,84 @@ from datetime import datetime
 # -------------------- 페이지 기본 설정 --------------------
 st.set_page_config(page_title="반려견 추모관", page_icon="🐾", layout="wide")
 
-# -------------------- CSS (상단 네비게이션 바) --------------------
-st.markdown("""
-    <style>
-    body {
-        background-color: #FDF6EC;
-        color: #4B3832;
-    }
-    h1, h2, h3 { color: #4B3832 !important; }
-    .stButton>button {
-        background-color: #CFA18D;
-        color: white;
-        border-radius: 10px;
-        padding: 6px 15px;
-        border: none;
-        font-size: 14px;
-    }
-    .stButton>button:hover { background-color: #D9A7A0; color: #fff; }
-    .stTextInput>div>div>input, .stTextArea textarea {
-        background-color: #fff;
-        border: 1px solid #CFA18D;
-        border-radius: 10px;
-    }
+UPLOAD_FOLDER = "uploaded_images"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-    /* 상단 네비게이션 바 */
+# -------------------- CSS 상단 네비게이션 --------------------
+st.markdown(
+    """
+    <style>
     .navbar {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        background-color: #FAE8D9;
-        padding: 10px 20px;
-        border-radius: 0 0 15px 15px;
+        background-color: #fff5f5;
+        padding: 12px 30px;
+        border-bottom: 2px solid #eee;
     }
-    .navbar-left {
-        font-size: 20px;
-        font-weight: bold;
-        color: #4B3832;
-    }
-    .navbar-right a {
-        margin: 0 10px;
-        text-decoration: none;
-        color: #4B3832;
-        font-weight: bold;
-        font-size: 16px;
-    }
-    .navbar-right a:hover {
+    .navbar h2 {
+        margin: 0;
         color: #CFA18D;
+        font-weight: bold;
+    }
+    .menu {
+        display: flex;
+        gap: 20px;
+    }
+    .menu a {
+        text-decoration: none;
+        font-size: 18px;
+        color: #444;
+        padding: 6px 12px;
+        border-radius: 8px;
+    }
+    .menu a.active {
+        background-color: #CFA18D;
+        color: white !important;
     }
     </style>
-""", unsafe_allow_html=True)
+    """,
+    unsafe_allow_html=True,
+)
 
-# -------------------- 상단 네비게이션 --------------------
-st.markdown("""
-    <div class="navbar">
-        <div class="navbar-left">🐾 Pet Memorialization</div>
-        <div class="navbar-right">
-            <a href="?page=main">부고장/방명록/추모관</a>
-            <a href="?page=streaming">장례식 스트리밍</a>
-            <a href="?page=donation">기부/꽃바구니</a>
-        </div>
-    </div>
-""", unsafe_allow_html=True)
+# -------------------- 네비게이션 상태 --------------------
+if "menu" not in st.session_state:
+    st.session_state.menu = "부고장"
 
-# -------------------- 페이지 라우팅 --------------------
-query_params = st.query_params
-page = query_params.get("page", ["main"])[0]
+menu_items = {
+    "부고장": "📜 부고장/방명록/추모관",
+    "스트리밍": "📺 장례식 스트리밍",
+    "기부": "💐 기부/꽃바구니"
+}
 
-UPLOAD_FOLDER = "uploaded_images"
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+# -------------------- 상단 바 HTML --------------------
+menu_html = '<div class="navbar"><h2>🐾 Pet Memorialization</h2><div class="menu">'
+for key, label in menu_items.items():
+    active_class = "active" if st.session_state.menu == key else ""
+    menu_html += f'<a href="#" class="{active_class}" onclick="window.parent.postMessage({{type: \'menu_select\', menu: \'{key}\'}}, \'*\')">{label}</a>'
+menu_html += "</div></div>"
+st.markdown(menu_html, unsafe_allow_html=True)
 
-# -------------------- 유틸: 이미지 리스트 --------------------
+# -------------------- JS 이벤트 핸들러 --------------------
+st.markdown(
+    """
+    <script>
+    const streamlitEvents = window.streamlitEvents || {};
+    window.streamlitEvents = streamlitEvents;
+    window.addEventListener("message", (event) => {
+        if (event.data.type === "menu_select") {
+            const menu = event.data.menu;
+            window.parent.postMessage({ isStreamlitMessage: true, type: "streamlit:setComponentValue", value: menu }, "*");
+        }
+    });
+    </script>
+    """,
+    unsafe_allow_html=True,
+)
+
+selected_menu = st.session_state.menu
+
+# -------------------- 유틸 --------------------
 def build_image_list():
     base_img = "https://github.com/hyeongyunkim/teamproject/raw/main/petfuneral.png"
     uploaded = [
@@ -85,9 +93,9 @@ def build_image_list():
     ]
     return [base_img] + sorted(uploaded)
 
-# -------------------- 페이지 1: 부고장 + 방명록 + 추모관 --------------------
-if page == "main":
-    st.markdown("<h1 style='text-align: center;'>In Loving Memory</h1>", unsafe_allow_html=True)
+# -------------------- 페이지 렌더링 --------------------
+if selected_menu == "부고장":
+    st.markdown("<h2 style='text-align: center;'>In Loving Memory</h2>", unsafe_allow_html=True)
     st.markdown("<p style='text-align: center;'>소중한 반려견을 추모할 수 있는 공간입니다</p>", unsafe_allow_html=True)
 
     # 이미지 캐러셀
@@ -114,11 +122,7 @@ if page == "main":
 
     # 부고장
     st.subheader("📜 부고장")
-    pet_name = "초코"
-    birth_date = "2015-03-15"
-    death_date = "2024-08-10"
-    st.info(f"사랑하는 반려견 {pet_name} 이(가) 무지개다리를 건넜습니다.\n\n"
-            f"🐾 태어난 날: {birth_date}\n\n🌈 무지개다리 건넌 날: {death_date}")
+    st.info("사랑하는 반려견 초코가 무지개다리를 건넜습니다.\n\n🐾 태어난 날: 2015-03-15\n\n🌈 무지개다리 건넌 날: 2024-08-10")
 
     # 방명록
     st.subheader("✍️ 방명록")
@@ -133,7 +137,6 @@ if page == "main":
         else:
             st.warning("이름과 메시지를 입력해주세요.")
 
-    st.subheader("📖 추모 메시지 모음")
     try:
         with open("guestbook.txt", "r", encoding="utf-8") as f:
             lines = f.readlines()
@@ -158,10 +161,10 @@ if page == "main":
                         f.writelines(lines)
                     st.rerun()
 
-    # 추모관 (사진 업로드)
+    # 추모관
     st.subheader("🖼️ 온라인 추모관")
     uploaded_file = st.file_uploader("사진 업로드", type=["png", "jpg", "jpeg"])
-    if uploaded_file is not None:
+    if uploaded_file:
         unique_filename = f"{uuid.uuid4()}_{uploaded_file.name}"
         save_path = os.path.join(UPLOAD_FOLDER, unique_filename)
         with open(save_path, "wb") as f:
@@ -169,10 +172,7 @@ if page == "main":
         st.success(f"{uploaded_file.name} 업로드 완료!")
         st.rerun()
 
-    image_files = sorted([
-        f for f in os.listdir(UPLOAD_FOLDER)
-        if f.lower().endswith((".png", ".jpg", ".jpeg"))
-    ])
+    image_files = sorted([f for f in os.listdir(UPLOAD_FOLDER) if f.lower().endswith((".png", ".jpg", ".jpeg"))])
     if image_files:
         cols_count = 3 if len(image_files) >= 3 else max(1, len(image_files))
         cols = st.columns(cols_count)
@@ -186,14 +186,12 @@ if page == "main":
     else:
         st.info("아직 업로드된 사진이 없습니다.")
 
-# -------------------- 페이지 2: 장례식 스트리밍 --------------------
-elif page == "streaming":
+elif selected_menu == "스트리밍":
     st.header("📺 장례식 실시간 스트리밍")
     video_url = st.text_input("YouTube 영상 URL 입력", "https://www.youtube.com/embed/dQw4w9WgXcQ")
     st.markdown(f"<div style='text-align:center;'><iframe width='560' height='315' src='{video_url}' frameborder='0' allowfullscreen></iframe></div>", unsafe_allow_html=True)
 
-# -------------------- 페이지 3: 기부 / 꽃바구니 주문 --------------------
-elif page == "donation":
+elif selected_menu == "기부":
     st.header("💐 조문객 기부 / 꽃바구니 주문")
     st.markdown("- 💳 기부: 카카오페이 / 토스 / 계좌이체 연동 가능\n- 🌹 꽃바구니 주문: 온라인 꽃집 링크 연결 가능")
     link = st.text_input("꽃바구니 주문 링크", "https://www.naver.com")
