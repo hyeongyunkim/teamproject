@@ -10,18 +10,19 @@ st.set_page_config(page_title="반려견 추모관", page_icon="🐾", layout="c
 st.markdown("""
     <style>
     body {
-        background-color: #FDF6EC; /* 따뜻한 아이보리톤 */
-        color: #4B3832; /* 짙은 브라운 텍스트 */
+        background-color: #FDF6EC;
+        color: #4B3832;
     }
     h1, h2, h3 {
-        color: #4B3832 !important; /* 제목 색상 */
+        color: #4B3832 !important;
     }
     .stButton>button {
         background-color: #CFA18D;
         color: white;
         border-radius: 10px;
-        padding: 8px 20px;
+        padding: 6px 15px;
         border: none;
+        font-size: 14px;
     }
     .stButton>button:hover {
         background-color: #D9A7A0;
@@ -32,11 +33,8 @@ st.markdown("""
         border: 1px solid #CFA18D;
         border-radius: 10px;
     }
-    .uploadedFile {
-        color: #4B3832;
-    }
     .stSidebar {
-        background-color: #FAE8D9; /* 사이드바 연한 베이지 */
+        background-color: #FAE8D9;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -104,21 +102,29 @@ if menu == "부고장 + 방명록 + 추모관":
                 time_str, user, msg = line.strip().split("|", 2)
             except ValueError:
                 continue
-            st.markdown(
-                f"""
-                <div style="
-                    background-color:#fff;
-                    padding:15px;
-                    margin:10px 0;
-                    border-radius:10px;
-                    border: 1px solid #CFA18D;">
-                    <p style="color:#4B3832; font-size:14px; margin:0;">🕊️ <b>{user}</b></p>
-                    <p style="color:#4B3832; font-size:16px; margin:5px 0;">{msg}</p>
-                    <p style="color:gray; font-size:12px; text-align:right; margin:0;">{time_str}</p>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
+            col1, col2 = st.columns([8,1])
+            with col1:
+                st.markdown(
+                    f"""
+                    <div style="
+                        background-color:#fff;
+                        padding:15px;
+                        margin:10px 0;
+                        border-radius:10px;
+                        border: 1px solid #CFA18D;">
+                        <p style="color:#4B3832; font-size:14px; margin:0;">🕊️ <b>{user}</b></p>
+                        <p style="color:#4B3832; font-size:16px; margin:5px 0;">{msg}</p>
+                        <p style="color:gray; font-size:12px; text-align:right; margin:0;">{time_str}</p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+            with col2:
+                if st.button("❌", key=f"delete_msg_{idx}"):
+                    lines.pop(len(lines)-1-idx)
+                    with open("guestbook.txt", "w", encoding="utf-8") as f:
+                        f.writelines(lines)
+                    st.rerun()
 
     # -------------------- 온라인 추모관 --------------------
     st.markdown("<h2>🖼️ 온라인 추모관</h2>", unsafe_allow_html=True)
@@ -143,5 +149,27 @@ if menu == "부고장 + 방명록 + 추모관":
             img_path = os.path.join(UPLOAD_FOLDER, img_file)
             with cols[idx % cols_count]:
                 st.image(img_path, width=200, caption="🌸 추억의 사진 🌸")
+                if st.button("삭제", key=f"delete_img_{idx}"):
+                    os.remove(img_path)
+                    st.rerun()
     else:
         st.info("아직 업로드된 사진이 없습니다.")
+
+# -------------------- 2페이지: 장례식 실시간 스트리밍 --------------------
+elif menu == "장례식 실시간 스트리밍":
+    st.header("📺 장례식 실시간 스트리밍 (원격 조문 지원)")
+    st.markdown("아래에 YouTube 링크를 입력하면 스트리밍 영상이 표시됩니다.")
+    video_url = st.text_input("YouTube 영상 URL 입력", "https://www.youtube.com/embed/dQw4w9WgXcQ")
+    st.markdown(
+        f"<div style='text-align:center;'><iframe width='560' height='315' src='{video_url}' frameborder='0' allowfullscreen></iframe></div>",
+        unsafe_allow_html=True
+    )
+
+# -------------------- 3페이지: 기부 / 꽃바구니 주문 --------------------
+elif menu == "기부 / 꽃바구니 주문":
+    st.header("💐 조문객 기부 / 꽃바구니 주문")
+    st.markdown("이 페이지에서 조문객이 온라인으로 기부하거나 꽃바구니를 주문할 수 있습니다.")
+    st.markdown("- 💳 기부: 카카오페이 / 토스 / 계좌이체 연동 가능")
+    st.markdown("- 🌹 꽃바구니 주문: 온라인 꽃집 링크 연결 가능")
+    link = st.text_input("꽃바구니 주문 링크", "https://www.naver.com")
+    st.markdown(f"<div style='text-align:center;'><a href='{link}' target='_blank' style='font-size:18px; color:#CFA18D; font-weight:bold;'>👉 꽃바구니 주문하러 가기</a></div>", unsafe_allow_html=True)
