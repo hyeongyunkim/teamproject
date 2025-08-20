@@ -18,7 +18,22 @@ st.markdown(f"<div style='text-align: center;'><img src='{img_url}' width='300'>
 # --- 부고장 ---
 st.markdown("<h2 style='text-align: center;'>📜 부고장</h2>", unsafe_allow_html=True)
 pet_name = "초코"
-st.markdown(f"<p style='text-align: center;'>사랑하는 반려견 <b>{pet_name}</b> 이(가) 무지개다리를 건넜습니다.<br>함께한 시간들을 기억하며 따뜻한 마음으로 추모해주세요.</p>", unsafe_allow_html=True)
+birth_date = "2015-03-15"
+death_date = "2024-08-10"
+
+st.markdown(
+    f"""
+    <p style='text-align: center;'>
+    사랑하는 반려견 <b>{pet_name}</b> 이(가) 무지개다리를 건넜습니다.<br>
+    함께한 시간들을 기억하며 따뜻한 마음으로 추모해주세요.
+    </p>
+    <p style='text-align: center;'>
+    🐾 <b>태어난 날:</b> {birth_date} <br>
+    🌈 <b>무지개다리 건넌 날:</b> {death_date}
+    </p>
+    """,
+    unsafe_allow_html=True
+)
 
 # --- 방명록 ---
 st.markdown("<h2 style='text-align: center;'>✍️ 방명록</h2>", unsafe_allow_html=True)
