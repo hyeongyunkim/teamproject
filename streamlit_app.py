@@ -64,7 +64,7 @@ if menu == "부고장 + 방명록 + 추모관":
 
     for idx, line in enumerate(lines):
         st.markdown(f"<p style='text-align: center;'>{line.strip()}</p>", unsafe_allow_html=True)
-        if st.button(f"삭제 {idx}", key=f"delete_msg_{idx}"):
+        if st.button(f"삭제", key=f"delete_msg_{idx}"):
             lines.pop(idx)
             with open("guestbook.txt", "w", encoding="utf-8") as f:
                 f.writelines(lines)
@@ -103,7 +103,7 @@ if menu == "부고장 + 방명록 + 추모관":
 elif menu == "장례식 실시간 스트리밍":
     st.header("📺 장례식 실시간 스트리밍 (원격 조문 지원)")
     st.markdown("아래에 실시간 스트리밍 영상을 삽입할 수 있습니다 (YouTube, Zoom, OBS 등 연동).")
-    video_url = st.text_input("YouTube 영상 URL 입력", "https://www.youtube.com/embed/dQw4w9WgXcQ")
+    video_url = st.text_input("YouTube 영상 URL 입력", "https://youtu.be/0q_htb-wGTM?si=t7n2par5CUs3WFFo")
     st.markdown(f"<iframe width='560' height='315' src='{video_url}' frameborder='0' allowfullscreen></iframe>", unsafe_allow_html=True)
 
 # --- 3페이지: 기부 / 꽃바구니 주문 ---
