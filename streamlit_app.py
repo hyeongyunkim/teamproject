@@ -18,6 +18,10 @@ if menu == "부고장 + 방명록 + 추모관":
     st.markdown("<h3 style='text-align: center;'>In Loving Memory</h3>", unsafe_allow_html=True)
     st.markdown("<p style='text-align: center;'>소중한 반려견을 추모할 수 있는 공간입니다</p>", unsafe_allow_html=True)
 
+    # --- 추모 이미지 (GitHub에서 불러오기) ---
+    img_url = "https://github.com/hyeongyunkim/teamproject/raw/main/petfuneral.png"
+    st.markdown(f"<div style='text-align: center;'><img src='{img_url}' width='300'></div>", unsafe_allow_html=True)
+
     # --- 부고장 ---
     st.markdown("<h2 style='text-align: center;'>📜 부고장</h2>", unsafe_allow_html=True)
     pet_name = "초코"
