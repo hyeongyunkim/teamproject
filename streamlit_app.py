@@ -128,8 +128,31 @@ if menu == "부고장 + 방명록 + 추모관":
 elif menu == "장례식 실시간 스트리밍":
     st.header("📺 장례식 실시간 스트리밍 (원격 조문 지원)")
     st.markdown("아래에 실시간 스트리밍 영상을 삽입할 수 있습니다 (YouTube, Zoom, OBS 등 연동).")
-    video_url = st.text_input("YouTube 영상 URL 입력", "https://youtu.be/0q_htb-wGTM?si=t7n2par5CUs3WFFo")
-    st.markdown(f"<iframe width='560' height='315' src='{video_url}' frameborder='0' allowfullscreen></iframe>", unsafe_allow_html=True)
+
+    video_url = st.text_input(
+        "YouTube 영상 URL 입력", 
+        "https://youtu.be/0q_htb-wGTM?si=t7n2par5CUs3WFFo"
+    )
+
+    # --- 유튜브 URL 처리 ---
+    if "youtube.com" in video_url or "youtu.be" in video_url:
+        if "watch?v=" in video_url:
+            video_id = video_url.split("watch?v=")[-1].split("&")[0]
+        elif "youtu.be/" in video_url:
+            video_id = video_url.split("youtu.be/")[-1].split("?")[0]
+        else:
+            video_id = None
+
+        if video_id:
+            embed_url = f"https://www.youtube.com/embed/{video_id}"
+            st.markdown(
+                f"<iframe width='560' height='315' src='{embed_url}' frameborder='0' allowfullscreen></iframe>", 
+                unsafe_allow_html=True
+            )
+        else:
+            st.error("유효한 YouTube 링크를 입력해주세요.")
+    else:
+        st.error("YouTube URL만 지원됩니다.")
 
 # --- 3페이지: 기부 / 꽃바구니 주문 ---
 elif menu == "기부 / 꽃바구니 주문":
