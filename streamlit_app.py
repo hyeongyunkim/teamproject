@@ -292,12 +292,44 @@ with tab3:
     st.markdown('</div>',unsafe_allow_html=True)
 
 # ---------- 플로팅 상담 버튼 ----------
+# ---------- 플로팅 상담 버튼 ----------
+if "show_fab_menu" not in st.session_state:
+    st.session_state.show_fab_menu = False
+
+# CSS 스타일 추가
 st.markdown("""
-<div class="floating-btn" id="floatBox">
-  <div class="menu">
-    <a href="https://pf.kakao.com/_example" target="_blank">카카오톡 문의</a>
-    <a href="tel:010-1234-5678">📞 전화 문의</a>
-  </div>
-  <button class="main" onclick="document.getElementById('floatBox').classList.toggle('open')">+</button>
-</div>
-""",unsafe_allow_html=True)
+<style>
+.fab-container { position: fixed; bottom: 20px; right: 20px; z-index: 9999; }
+.fab-main {
+    width: 56px; height: 56px; border-radius: 50%; background-color: #CFA18D;
+    color: white; font-size: 26px; border: none;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.15); cursor: pointer;
+}
+.fab-menu {
+    display: flex; flex-direction: column; align-items: flex-end; margin-bottom: 8px;
+}
+.fab-menu a {
+    background-color: #FAE8D9; color: #4B3832;
+    padding: 8px 14px; border-radius: 20px; margin: 4px 0;
+    text-decoration: none; font-weight: 600; font-size: 14px; border: 1px solid #EED7CA;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# HTML 출력
+st.markdown('<div class="fab-container">', unsafe_allow_html=True)
+
+# 메뉴 펼치기 (세션 상태 기반)
+if st.session_state.show_fab_menu:
+    st.markdown("""
+    <div class="fab-menu">
+        <a href="https://pf.kakao.com/_example" target="_blank">💬 카카오톡 문의</a>
+        <a href="tel:010-1234-5678">📞 전화 문의</a>
+    </div>
+    """, unsafe_allow_html=True)
+
+# + 버튼 (Streamlit 버튼)
+if st.button("＋" if not st.session_state.show_fab_menu else "✕", key="fab_main"):
+    st.session_state.show_fab_menu = not st.session_state.show_fab_menu
+
+st.markdown('</div>', unsafe_allow_html=True)
