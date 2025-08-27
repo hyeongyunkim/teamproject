@@ -128,7 +128,7 @@ st.markdown("""
         border-radius:16px; padding:10px; margin-bottom:12px;
     }
     .photo-frame .thumb{
-        width:85%; aspect-ratio:1/1; object-fit:cover; display:block; border-radius:10px; margin:0 auto;
+        width:43%; aspect-ratio:1/1; object-fit:cover; display:block; border-radius:10px; margin:0 auto;
     }
     </style>
 """, unsafe_allow_html=True)
