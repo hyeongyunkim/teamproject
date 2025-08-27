@@ -81,13 +81,14 @@ st.markdown("""
         margin-bottom: 12px;
     }
 
-    /* --- 정사각형 썸네일 --- */
+    /* --- 정사각형 썸네일(크기 살짝 축소: 85% 폭) --- */
     .photo-frame .thumb {
-        width: 100%;
-        aspect-ratio: 1 / 1;   /* 정사각형 */
-        object-fit: cover;
+        width: 85%;           /* 👈 컬럼 너비 대비 85%로 살짝 작게 */
+        aspect-ratio: 1 / 1;  /* 정사각형 비율 유지 */
+        object-fit: cover;    /* 잘라서 채우기 */
         display: block;
         border-radius: 10px;
+        margin: 0 auto;       /* 가운데 정렬 */
     }
 
     /* --- 상단 캐러셀용 액자 --- */
@@ -151,10 +152,10 @@ with tab1:
     st.markdown("<h2 style='text-align:center;'>In Loving Memory</h2>", unsafe_allow_html=True)
     st.markdown("<p style='text-align:center;'>소중한 반려견을 추모할 수 있는 공간입니다</p>", unsafe_allow_html=True)
 
-    # --- 대표 이미지 캐러셀 ---
+    # --- 대표 이미지 캐러셀 (액자 스타일 + 총 장수/인덱스) ---
     img_list = build_image_list()
     n = len(img_list)
-    total_photos = max(0, n - 1)  # 업로드된 사진 개수 (대표 제외)
+    total_photos = max(0, n - 1)  # 업로드 사진 수(대표 제외)
 
     if "carousel_idx" not in st.session_state:
         st.session_state.carousel_idx = 0
@@ -168,6 +169,7 @@ with tab1:
     with mid:
         current = img_list[st.session_state.carousel_idx]
         if current.startswith("http"):
+            # 대표 이미지(URL)
             st.markdown(
                 f"""
                 <div class="photo-frame hero">
@@ -177,6 +179,7 @@ with tab1:
                 unsafe_allow_html=True
             )
         else:
+            # 업로드 이미지
             data_uri = img_file_to_data_uri(current)
             st.markdown(
                 f"""
@@ -191,7 +194,8 @@ with tab1:
             f"<p style='text-align:center; color:#6C5149;'>"
             f"<b>{st.session_state.carousel_idx + 1} / {n}</b> • "
             f"현재 업로드된 사진: <b>{total_photos}장</b>"
-            f"</p>", unsafe_allow_html=True
+            f"</p>",
+            unsafe_allow_html=True
         )
 
     with nextb:
@@ -259,23 +263,31 @@ with tab1:
 
     # --- 온라인 추모관 ---
     st.subheader("🖼️ 온라인 추모관")
+    # 여러 장 업로드 + 중복 방지(해시)
     with st.form("gallery_upload", clear_on_submit=True):
         uploaded_files = st.file_uploader("사진 업로드", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
         submit = st.form_submit_button("업로드")
 
     if submit and uploaded_files:
+        saved, dup = 0, 0
         for uploaded_file in uploaded_files:
             data = uploaded_file.getvalue()
             digest = file_sha256(data)[:16]
             if any(f.startswith(digest + "_") for f in os.listdir(UPLOAD_FOLDER)):
+                dup += 1
                 continue
             safe_name = "".join(c for c in uploaded_file.name if c not in "\\/:*?\"<>|")
             filename = f"{digest}_{safe_name}"
             with open(os.path.join(UPLOAD_FOLDER, filename), "wb") as f:
                 f.write(data)
-        st.success("사진 업로드 완료!")
+            saved += 1
+        if saved:
+            st.success(f"{saved}장 업로드 완료!")
+        if dup:
+            st.info(f"중복으로 제외된 사진: {dup}장")
         st.rerun()
 
+    # 갤러리: 3열, 정사각형 썸네일(조금 작게 85% 폭)
     image_files = sorted([
         f for f in os.listdir(UPLOAD_FOLDER)
         if f.lower().endswith((".png", ".jpg", ".jpeg"))
@@ -295,19 +307,29 @@ with tab1:
                     unsafe_allow_html=True
                 )
                 if st.button("삭제", key=f"delete_img_{idx}"):
-                    os.remove(img_path)
+                    if os.path.exists(img_path):
+                        os.remove(img_path)
                     st.rerun()
     else:
         st.info("아직 업로드된 사진이 없습니다.")
 
-# ==================== ② 장례식 스트리밍 ====================
+# ==================== ② 장례식 실시간 스트리밍 ====================
 with tab2:
     st.header("📺 장례식 실시간 스트리밍")
-    video_url = st.text_input("YouTube 영상 URL", "https://www.youtube.com/embed/dQw4w9WgXcQ")
-    st.markdown(f"<div style='text-align:center;'><iframe width='560' height='315' src='{video_url}' frameborder='0' allowfullscreen></iframe></div>", unsafe_allow_html=True)
+    st.markdown("아래에 YouTube 임베드 링크를 입력하세요 (예: https://www.youtube.com/embed/영상ID)")
+    video_url = st.text_input("YouTube 영상 URL 입력", "https://www.youtube.com/embed/dQw4w9WgXcQ")
+    st.markdown(
+        f"<div style='text-align:center;'><iframe width='560' height='315' src='{video_url}' frameborder='0' allowfullscreen></iframe></div>",
+        unsafe_allow_html=True
+    )
 
-# ==================== ③ 기부 / 꽃바구니 ====================
+# ==================== ③ 기부 / 꽃바구니 주문 ====================
 with tab3:
     st.header("💐 조문객 기부 / 꽃바구니 주문")
+    st.markdown("- 💳 기부: 카카오페이 / 토스 / 계좌이체 연동 가능\n- 🌹 꽃바구니 주문: 온라인 꽃집 링크 연결 가능")
     link = st.text_input("꽃바구니 주문 링크", "https://www.naver.com")
-    st.markdown(f"<div style='text-align:center;'><a href='{link}' target='_blank' style='font-size:18px; color:#CFA18D; font-weight:bold;'>👉 꽃바구니 주문하러 가기</a></div>", unsafe_allow_html=True)
+    st.markdown(
+        f"<div style='text-align:center;'><a href='{link}' target='_blank' "
+        f"style='font-size:18px; color:#CFA18D; font-weight:bold;'>👉 꽃바구니 주문하러 가기</a></div>",
+        unsafe_allow_html=True
+    )
