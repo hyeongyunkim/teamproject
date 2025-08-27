@@ -328,5 +328,69 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+# -------------------- 플로팅 상담 버튼 (CSS-only Toggle) --------------------
+st.markdown("""
+<style>
+.fab-container {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+}
+/* 숨겨진 체크박스 */
+#fab-toggle {
+    display: none;
+}
+.fab-button {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background-color: #CFA18D;
+    color: white;
+    font-size: 30px;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+}
+.fab-menu {
+    display: none;
+    flex-direction: column;
+    margin-bottom: 10px;
+}
+.fab-menu a {
+    background-color: #FAE8D9;
+    color: #4B3832;
+    padding: 8px 14px;
+    border-radius: 20px;
+    margin: 6px 0;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 14px;
+    border: 1px solid #EED7CA;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+}
+/* 체크박스가 켜졌을 때 메뉴 표시 */
+#fab-toggle:checked ~ .fab-menu {
+    display: flex;
+}
+</style>
+
+<div class="fab-container">
+  <input type="checkbox" id="fab-toggle">
+  <div class="fab-menu">
+    <a href="https://pf.kakao.com/_example" target="_blank">💬 카카오톡 문의</a>
+    <a href="tel:010-1234-5678">📞 전화 문의</a>
+  </div>
+  <label for="fab-toggle" class="fab-button">+</label>
+</div>
+""", unsafe_allow_html=True)
+
+
 
 
