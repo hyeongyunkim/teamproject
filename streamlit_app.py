@@ -2,11 +2,11 @@ import streamlit as st
 import os
 import uuid
 import hashlib
-import base64
-import mimetypes
 import shutil
 from datetime import datetime
 import html  # 메시지 안전 표시용 (특수문자 이스케이프)
+from PIL import Image
+from io import BytesIO
 
 # -------------------- 페이지 기본 설정 --------------------
 st.set_page_config(page_title="반려견 추모관", page_icon="🐾", layout="wide")
@@ -110,10 +110,15 @@ st.markdown('<div class="nav-divider"></div>', unsafe_allow_html=True)
 
 # -------------------- 공용 경로/유틸 --------------------
 UPLOAD_FOLDER = "uploaded_images"
+THUMB_DIR = "uploaded_images_thumbs"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(THUMB_DIR, exist_ok=True)
+
+MAX_SIDE = 2560  # 업로드 이미지 최대 변 길이
+THUMB_SIZE = (600, 600)  # 썸네일 크기 (가로/세로 최대)
 
 def build_image_list():
-    """대표 이미지 + 업로드 이미지 목록"""
+    """대표 이미지 + 업로드 이미지 목록 (대표 이미지는 URL)"""
     base_img = "https://github.com/hyeongyunkim/teamproject/raw/main/petfuneral.png"
     uploaded = [
         os.path.join(UPLOAD_FOLDER, f)
@@ -131,20 +136,30 @@ def initials_from_name(name: str) -> str:
 def file_sha256(byte_data: bytes) -> str:
     return hashlib.sha256(byte_data).hexdigest()
 
-def img_file_to_data_uri(path: str) -> str:
-    mime, _ = mimetypes.guess_type(path)
-    if mime is None:
-        mime = "image/jpeg"
-    with open(path, "rb") as f:
-        b64 = base64.b64encode(f.read()).decode("utf-8")
-    return f"data:{mime};base64,{b64}"
+@st.cache_data(show_spinner=False)
+def get_thumbnail(src_path: str, size=THUMB_SIZE) -> str:
+    """원본 이미지로부터 썸네일 파일을 생성/재사용하고 경로 반환"""
+    base = os.path.basename(src_path)
+    dst_path = os.path.join(THUMB_DIR, base + ".jpg")
+    if not os.path.exists(dst_path):
+        try:
+            with Image.open(src_path) as im:
+                im.thumbnail(size)
+                im.convert("RGB").save(dst_path, format="JPEG", quality=85, optimize=True)
+        except Exception:
+            # 썸네일 실패 시 원본을 그대로 쓰도록 원본 경로 반환
+            return src_path
+    return dst_path
 
 # ====== 갤러리 초기화(사진만) ======
 def reset_gallery():
-    """업로드된 모든 사진을 삭제하고 온라인 추모관을 초기화"""
+    """업로드된 모든 사진/썸네일 삭제하고 초기화"""
     if os.path.exists(UPLOAD_FOLDER):
-        shutil.rmtree(UPLOAD_FOLDER)  # 폴더 통째 삭제
-    os.makedirs(UPLOAD_FOLDER, exist_ok=True)  # 빈 폴더 재생성
+        shutil.rmtree(UPLOAD_FOLDER)
+    if os.path.exists(THUMB_DIR):
+        shutil.rmtree(THUMB_DIR)
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+    os.makedirs(THUMB_DIR, exist_ok=True)
     if "carousel_idx" in st.session_state:
         del st.session_state["carousel_idx"]
     st.success("✅ 사진이 모두 삭제되어 초기 상태로 돌아갔습니다.")
@@ -171,7 +186,9 @@ with tab1:
             st.session_state.carousel_idx = (st.session_state.carousel_idx - 1) % n
     with img_col:
         st.markdown("<div class='centered-img'>", unsafe_allow_html=True)
-        st.image(img_list[st.session_state.carousel_idx], width=500)
+        # 대표 이미지는 URL, 업로드 이미지는 로컬 경로
+        current_img = img_list[st.session_state.carousel_idx]
+        st.image(current_img, width=500)
         st.markdown("</div>", unsafe_allow_html=True)
     with nav_next:
         if st.button("▶", key="carousel_next"):
@@ -216,10 +233,15 @@ with tab1:
     except FileNotFoundError:
         lines = []
 
+    # OOM 방지: 너무 많으면 최근 100개만
+    MAX_MSG = 100
+    if len(lines) > MAX_MSG:
+        lines = lines[-MAX_MSG:]
+
     if not lines:
         st.info("아직 등록된 메시지가 없습니다.")
     else:
-        for idx, line in enumerate(reversed(lines)):
+        for idx, line in enumerate(reversed(lines)):  # 최신이 위로
             try:
                 time_str, user, msg = line.strip().split("|", 2)
             except ValueError:
@@ -253,7 +275,7 @@ with tab1:
                         f.writelines(lines)
                     st.rerun()
 
-    # --- 온라인 추모관 (업로드/삭제) ---
+    # --- 온라인 추모관 (초기화/업로드/목록) ---
     st.subheader("🖼️ 온라인 추모관")
 
     # 사진 전체 삭제 초기화 (방명록은 유지)
@@ -266,7 +288,7 @@ with tab1:
             else:
                 st.error("삭제에 동의해 주세요.")
 
-    # 업로드(중복 방지: SHA-256)
+    # 업로드(중복 방지 + 대형 리사이즈)
     with st.form("gallery_upload", clear_on_submit=True):
         uploaded_file = st.file_uploader("사진 업로드", type=["png", "jpg", "jpeg"])
         submit = st.form_submit_button("업로드")
@@ -274,6 +296,7 @@ with tab1:
     if submit and uploaded_file is not None:
         data = uploaded_file.getvalue()
         digest = file_sha256(data)[:16]
+        # 중복 방지: 동일 해시 파일 존재 여부
         existing = [f for f in os.listdir(UPLOAD_FOLDER) if f.startswith(digest + "_")]
         if existing:
             st.info("이미 같은 사진이 업로드되어 있어요. (중복 업로드 방지)")
@@ -281,34 +304,65 @@ with tab1:
             safe_name = "".join(c for c in uploaded_file.name if c not in "\\/:*?\"<>|")
             filename = f"{digest}_{safe_name}"
             save_path = os.path.join(UPLOAD_FOLDER, filename)
-            with open(save_path, "wb") as f:
-                f.write(data)
+
+            # 큰 이미지는 저장 전에 리사이즈 (메모리/저장 공간 절약)
+            try:
+                with Image.open(BytesIO(data)) as im:
+                    im.thumbnail((MAX_SIDE, MAX_SIDE))
+                    im.convert("RGB").save(save_path, format="JPEG", quality=88, optimize=True)
+            except Exception:
+                # 이미지 파싱 실패 시 원본을 그냥 저장
+                with open(save_path, "wb") as f:
+                    f.write(data)
+
+            # 썸네일 미리 생성 (첫 화면 렌더링 속도 향상)
+            _ = get_thumbnail(save_path)
+
             st.success(f"{uploaded_file.name} 업로드 완료!")
         st.rerun()
 
+    # ===== 갤러리 목록 (썸네일 + 페이지네이션) =====
     image_files = sorted([
         f for f in os.listdir(UPLOAD_FOLDER)
         if f.lower().endswith((".png", ".jpg", ".jpeg"))
     ])
+
     if image_files:
-        cols_count = 3 if len(image_files) >= 3 else max(1, len(image_files))
-        cols = st.columns(cols_count)
-        for idx, img_file in enumerate(image_files):
+        # 페이지네이션
+        page_size = 9
+        total = len(image_files)
+        max_page = max(1, (total - 1) // page_size + 1)
+        page = st.number_input("페이지", min_value=1, max_value=max_page, value=1)
+        start, end = (page - 1) * page_size, min(page * page_size, total)
+
+        cols = st.columns(3)
+        for i, img_file in enumerate(image_files[start:end], start=start):
             img_path = os.path.join(UPLOAD_FOLDER, img_file)
-            with cols[idx % cols_count]:
-                data_uri = img_file_to_data_uri(img_path)
-                st.markdown(
-                    f"""
-                    <div class="photo-frame">
-                        <img src="{data_uri}" alt="memorial photo">
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-                if st.button("삭제", key=f"delete_img_{idx}"):
-                    if os.path.exists(img_path):
-                        os.remove(img_path)
-                    st.rerun()
+            thumb_path = get_thumbnail(img_path)
+
+            with cols[(i - start) % 3]:
+                st.markdown("<div class='photo-frame'>", unsafe_allow_html=True)
+                st.image(thumb_path, use_container_width=True)
+                st.markdown("</div>", unsafe_allow_html=True)
+
+                c1, c2 = st.columns([1, 1])
+                with c1:
+                    if st.button("🔍 보기", key=f"zoom_{i}"):
+                        with st.modal("사진 보기"):
+                            st.image(img_path, use_container_width=True)
+                with c2:
+                    if st.button("삭제", key=f"delete_img_{i}"):
+                        # 원본 삭제
+                        try:
+                            os.remove(img_path)
+                        except FileNotFoundError:
+                            pass
+                        # 썸네일 삭제
+                        try:
+                            os.remove(os.path.join(THUMB_DIR, img_file + ".jpg"))
+                        except FileNotFoundError:
+                            pass
+                        st.rerun()
     else:
         st.info("아직 업로드된 사진이 없습니다.")
 
