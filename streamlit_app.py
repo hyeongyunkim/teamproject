@@ -81,7 +81,7 @@ st.markdown("""
         box-shadow: 0 8px 18px rgba(79,56,50,0.12);
         border-radius: 16px;
         padding: 10px;
-        margin-bottom: 16px;
+        margin-bottom: 12px;
     }
     .photo-frame img {
         width: 100%;
@@ -97,6 +97,12 @@ st.markdown("""
         object-fit: cover;   /* 중앙 기준 잘라내기 */
         display: block;
         border-radius: 10px;
+    }
+
+    /* --- 상단 캐러셀용 액자(조금 더 여백) --- */
+    .photo-frame.hero {
+        max-width: 560px;    /* 가운데 좁게 */
+        margin: 0 auto 8px auto;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -121,13 +127,14 @@ UPLOAD_FOLDER = "uploaded_images"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 def build_image_list():
+    """대표 이미지 + 업로드 이미지 목록 (대표 이미지는 URL)"""
     base_img = "https://github.com/hyeongyunkim/teamproject/raw/main/petfuneral.png"
     uploaded = [
         os.path.join(UPLOAD_FOLDER, f)
-        for f in os.listdir(UPLOAD_FOLDER)
+        for f in sorted(os.listdir(UPLOAD_FOLDER))
         if f.lower().endswith((".png", ".jpg", ".jpeg"))
     ]
-    return [base_img] + sorted(uploaded)
+    return [base_img] + uploaded
 
 def initials_from_name(name: str) -> str:
     name = name.strip()
@@ -154,21 +161,54 @@ with tab1:
     st.markdown("<h2 style='text-align:center;'>In Loving Memory</h2>", unsafe_allow_html=True)
     st.markdown("<p style='text-align:center;'>소중한 반려견을 추모할 수 있는 공간입니다</p>", unsafe_allow_html=True)
 
-    # --- 대표 이미지 캐러셀 ---
+    # --- 대표 이미지 캐러셀 (액자 스타일 + 총 장수/인덱스) ---
     img_list = build_image_list()
-    n = len(img_list)
+    n = len(img_list)                   # 대표 + 업로드 포함
+    total_photos = max(0, n - 1)        # 업로드 사진 수 (대표 제외)
+
     if "carousel_idx" not in st.session_state:
         st.session_state.carousel_idx = 0
     st.session_state.carousel_idx %= max(n, 1)
 
-    nav_prev, img_col, nav_next = st.columns([1,6,1])
+    nav_prev, mid, nav_next = st.columns([1,6,1])
     with nav_prev:
         if st.button("◀", key="carousel_prev"):
             st.session_state.carousel_idx = (st.session_state.carousel_idx - 1) % n
-    with img_col:
-        st.markdown("<div class='centered-img'>", unsafe_allow_html=True)
-        st.image(img_list[st.session_state.carousel_idx], width=500)
-        st.markdown("</div>", unsafe_allow_html=True)
+
+    with mid:
+        current = img_list[st.session_state.carousel_idx]
+        # 액자 형태로 표시 (상단 캐러셀 전용 hero 프레임)
+        if current.startswith("http://") or current.startswith("https://"):
+            # 대표 이미지(URL)
+            st.markdown(
+                f"""
+                <div class="photo-frame hero">
+                    <img src="{current}" alt="memorial hero">
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+        else:
+            # 업로드 이미지(Data URI로 액자 안에)
+            data_uri = img_file_to_data_uri(current)
+            st.markdown(
+                f"""
+                <div class="photo-frame hero">
+                    <img src="{data_uri}" alt="memorial hero">
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+        # 인덱스/총 장수 안내
+        st.markdown(
+            f"<p style='text-align:center; color:#6C5149;'>"
+            f"<b>{st.session_state.carousel_idx + 1} / {n}</b> &nbsp;•&nbsp; "
+            f"현재 업로드된 사진: <b>{total_photos}장</b>"
+            f"</p>",
+            unsafe_allow_html=True
+        )
+
     with nav_next:
         if st.button("▶", key="carousel_next"):
             st.session_state.carousel_idx = (st.session_state.carousel_idx + 1) % n
@@ -252,27 +292,35 @@ with tab1:
     # --- 온라인 추모관 (업로드/삭제/갤러리) ---
     st.subheader("🖼️ 온라인 추모관")
 
-    # 업로드(중복 방지: SHA-256)
+    # ✅ 여러 장 업로드 가능 + 중복 방지(해시)
     with st.form("gallery_upload", clear_on_submit=True):
-        uploaded_file = st.file_uploader("사진 업로드", type=["png", "jpg", "jpeg"])
+        uploaded_files = st.file_uploader("사진 업로드", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
         submit = st.form_submit_button("업로드")
 
-    if submit and uploaded_file is not None:
-        data = uploaded_file.getvalue()
-        digest = file_sha256(data)[:16]
-        existing = [f for f in os.listdir(UPLOAD_FOLDER) if f.startswith(digest + "_")]
-        if existing:
-            st.info("이미 같은 사진이 업로드되어 있어요. (중복 업로드 방지)")
-        else:
+    if submit and uploaded_files:
+        saved = 0
+        dup = 0
+        for uploaded_file in uploaded_files:
+            data = uploaded_file.getvalue()
+            digest = file_sha256(data)[:16]
+            # 같은 해시가 이미 있으면 스킵
+            if any(f.startswith(digest + "_") for f in os.listdir(UPLOAD_FOLDER)):
+                dup += 1
+                continue
             safe_name = "".join(c for c in uploaded_file.name if c not in "\\/:*?\"<>|")
             filename = f"{digest}_{safe_name}"
             save_path = os.path.join(UPLOAD_FOLDER, filename)
             with open(save_path, "wb") as f:
                 f.write(data)
-            st.success(f"{uploaded_file.name} 업로드 완료!")
+            saved += 1
+
+        if saved:
+            st.success(f"{saved}장 업로드 완료!")
+        if dup:
+            st.info(f"중복으로 제외된 사진: {dup}장")
         st.rerun()
 
-    # ===== 갤러리: 한 줄에 3장, 일정 크기 썸네일 =====
+    # ===== 갤러리: 한 줄에 3장, 일정 크기 썸네일(액자) =====
     image_files = sorted([
         f for f in os.listdir(UPLOAD_FOLDER)
         if f.lower().endswith((".png", ".jpg", ".jpeg"))
