@@ -386,67 +386,53 @@ with tab3:
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------- 우하단 플로팅 상담 버튼 (전화/카카오톡/길찾기) ----------
-# ---------- 우하단 플로팅 상담 버튼 (토글형) ----------
+# ---------- 우하단 플로팅 상담 버튼 (자바스크립트 없이 CSS 토글) ----------
 st.markdown("""
 <style>
-.fab-container {
-  position: fixed;
-  right: 18px;
-  bottom: 18px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  z-index: 9999;
+.fab-container{
+  position: fixed; right: 18px; bottom: 18px; z-index: 9999;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
 }
-.fab-main {
-  background:#3F3A37; color:#fff; border-radius:50%;
-  width:54px; height:54px;
-  display:flex; align-items:center; justify-content:center;
-  font-size:26px; font-weight:700;
-  cursor:pointer;
-  box-shadow:0 6px 16px rgba(63,58,55,.25);
-  transition: transform .25s ease;
-}
-.fab-main.open { transform: rotate(45deg); } /* + → × 효과 */
+/* 실제 토글은 체크박스로, 화면에서는 숨김 */
+#fabToggle{ display:none; }
 
-.fab-menu {
+/* 메인 버튼(＋ / ×) */
+.fab-main{
+  background:#3F3A37; color:#fff; border-radius:50%;
+  width:54px; height:54px; display:flex; align-items:center; justify-content:center;
+  font-size:26px; font-weight:700; cursor:pointer;
+  box-shadow:0 6px 16px rgba(63,58,55,.25); user-select:none;
+  transition: transform .25s ease, opacity .15s ease;
+}
+/* + 기호를 :after로 표기 → 토글 시 ×로 변경 */
+.fab-main::after{ content:"＋"; }
+#fabToggle:checked + label.fab-main::after{ content:"×"; }
+
+/* 펼쳐지는 메뉴 */
+.fab-menu{
   display: none;
-  flex-direction: column;
-  gap: 10px;
-  margin-bottom: 10px;
+  flex-direction: column; gap: 10px; margin-bottom: 2px;
 }
-.fab-menu a {
-  background:#fff; color:#3F3A37;
-  border-radius:999px;
-  padding:10px 14px;
-  text-decoration:none;
-  font-weight:700;
-  border:1px solid #E8DED8;
-  box-shadow:0 6px 16px rgba(63,58,55,.2);
+#fabToggle:checked ~ .fab-menu{ display:flex; }
+
+.fab-menu a{
+  background:#fff; color:#3F3A37; text-decoration:none; font-weight:700;
+  border:1px solid #E8DED8; border-radius:999px; padding:10px 14px;
+  box-shadow:0 6px 16px rgba(63,58,55,.2); white-space:nowrap;
 }
-.fab-menu.show { display: flex; }
+.fab-menu a:hover{ filter: brightness(0.98); }
 </style>
 
 <div class="fab-container">
-  <div class="fab-menu" id="fabMenu">
+  <!-- 체크박스(숨김) + 라벨(버튼) + 메뉴 -->
+  <input type="checkbox" id="fabToggle">
+  <label for="fabToggle" class="fab-main" title="상담 메뉴 열기/닫기"></label>
+  <div class="fab-menu">
     <a href="tel:01000000000">📞 전화 상담</a>
     <a href="https://pf.kakao.com/" target="_blank">💬 카카오톡 문의</a>
     <a href="https://maps.google.com/?q=Seoul" target="_blank">🗺️ 길찾기</a>
   </div>
-  <div class="fab-main" id="fabBtn">＋</div>
 </div>
-
-<script>
-const btn = window.parent.document.getElementById("fabBtn");
-const menu = window.parent.document.getElementById("fabMenu");
-if (btn) {
-  btn.onclick = () => {
-    menu.classList.toggle("show");
-    btn.classList.toggle("open");
-    btn.innerHTML = menu.classList.contains("show") ? "×" : "＋";
-  };
-}
-</script>
 """, unsafe_allow_html=True)
 
 
