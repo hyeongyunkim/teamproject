@@ -1,6 +1,7 @@
 import streamlit as st
 import os
 import uuid
+import hashlib
 from datetime import datetime
 import html  # 메시지 안전 표시용 (특수문자 이스케이프)
 
@@ -45,6 +46,30 @@ st.markdown("""
     .guest-name { font-weight:700; }
     .guest-time { font-size:12px; color:#8B6F66; }
     .guest-msg { font-size:16px; color:#4B3832; white-space:pre-wrap; margin: 6px 0 0 0; }
+
+    /* ---------- 탭 헤더 정렬/균등 너비 ---------- */
+    /* Streamlit의 tabs는 baseweb 탭 컴포넌트를 사용합니다 */
+    div[data-baseweb="tab-list"] {
+        justify-content: space-between !important;  /* 양쪽 정렬로 전체 폭 채우기 */
+        gap: 12px !important;
+        width: 100% !important;
+    }
+    button[role="tab"] {
+        flex: 1 1 0 !important;     /* 균등 너비 */
+        text-align: center !important;
+        border-radius: 999px !important;  /* pill 느낌 */
+        border: 1px solid #EED7CA !important;
+        background: #FFF6EE !important;
+        color: #4B3832 !important;
+        font-weight: 600 !important;
+    }
+    /* 활성 탭 스타일 */
+    button[aria-selected="true"][role="tab"] {
+        background: #CFA18D !important;
+        color: #fff !important;
+        border-color: #CFA18D !important;
+        box-shadow: 0 2px 6px rgba(207,161,141,.35);
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -82,7 +107,10 @@ def initials_from_name(name: str) -> str:
         return "🕊️"
     return name[0].upper()
 
-# -------------------- 상단 탭(새 메뉴) --------------------
+def file_sha256(byte_data: bytes) -> str:
+    return hashlib.sha256(byte_data).hexdigest()
+
+# -------------------- 상단 탭 --------------------
 tab1, tab2, tab3 = st.tabs(["📜 부고장/방명록/추모관", "📺 장례식 스트리밍", "💐 기부/꽃바구니"])
 
 # ==================== ① 부고장/방명록/추모관 ====================
@@ -189,13 +217,26 @@ with tab1:
 
     # --- 온라인 추모관 (업로드/삭제) ---
     st.subheader("🖼️ 온라인 추모관")
-    uploaded_file = st.file_uploader("사진 업로드", type=["png", "jpg", "jpeg"])
-    if uploaded_file is not None:
-        unique_filename = f"{uuid.uuid4()}_{uploaded_file.name}"
-        save_path = os.path.join(UPLOAD_FOLDER, unique_filename)
-        with open(save_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-        st.success(f"{uploaded_file.name} 업로드 완료!")
+
+    # ✅ 폼으로 감싸서 '제출' 눌렀을 때만 저장되게 (자동 재실행 중복 방지)
+    with st.form("gallery_upload", clear_on_submit=True):
+        uploaded_file = st.file_uploader("사진 업로드", type=["png", "jpg", "jpeg"])
+        submit = st.form_submit_button("업로드")
+
+    if submit and uploaded_file is not None:
+        data = uploaded_file.getvalue()
+        digest = file_sha256(data)[:16]  # 파일 고유 해시 (앞 16자리만 사용)
+        # 같은 해시로 이미 저장된 파일이 있으면 저장하지 않음 (중복 방지)
+        existing = [f for f in os.listdir(UPLOAD_FOLDER) if f.startswith(digest + "_")]
+        if existing:
+            st.info("이미 같은 사진이 업로드되어 있어요. (중복 업로드 방지)")
+        else:
+            safe_name = "".join(c for c in uploaded_file.name if c not in "\\/:*?\"<>|")
+            filename = f"{digest}_{safe_name}"
+            save_path = os.path.join(UPLOAD_FOLDER, filename)
+            with open(save_path, "wb") as f:
+                f.write(data)
+            st.success(f"{uploaded_file.name} 업로드 완료!")
         st.rerun()
 
     image_files = sorted([
