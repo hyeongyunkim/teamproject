@@ -386,13 +386,69 @@ with tab3:
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------- 우하단 플로팅 상담 버튼 (전화/카카오톡/길찾기) ----------
+# ---------- 우하단 플로팅 상담 버튼 (토글형) ----------
 st.markdown("""
-<div class="fab-wrap">
-  <a class="fab" href="tel:01000000000" title="전화 상담">📞 전화 상담</a>
-  <a class="fab secondary" href="https://pf.kakao.com/" target="_blank" title="카카오톡 문의">💬 카카오톡 문의</a>
-  <a class="fab secondary" href="https://maps.google.com/?q=Seoul" target="_blank" title="오시는 길">🗺️ 길찾기</a>
+<style>
+.fab-container {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  z-index: 9999;
+}
+.fab-main {
+  background:#3F3A37; color:#fff; border-radius:50%;
+  width:54px; height:54px;
+  display:flex; align-items:center; justify-content:center;
+  font-size:26px; font-weight:700;
+  cursor:pointer;
+  box-shadow:0 6px 16px rgba(63,58,55,.25);
+  transition: transform .25s ease;
+}
+.fab-main.open { transform: rotate(45deg); } /* + → × 효과 */
+
+.fab-menu {
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.fab-menu a {
+  background:#fff; color:#3F3A37;
+  border-radius:999px;
+  padding:10px 14px;
+  text-decoration:none;
+  font-weight:700;
+  border:1px solid #E8DED8;
+  box-shadow:0 6px 16px rgba(63,58,55,.2);
+}
+.fab-menu.show { display: flex; }
+</style>
+
+<div class="fab-container">
+  <div class="fab-menu" id="fabMenu">
+    <a href="tel:01000000000">📞 전화 상담</a>
+    <a href="https://pf.kakao.com/" target="_blank">💬 카카오톡 문의</a>
+    <a href="https://maps.google.com/?q=Seoul" target="_blank">🗺️ 길찾기</a>
+  </div>
+  <div class="fab-main" id="fabBtn">＋</div>
 </div>
+
+<script>
+const btn = window.parent.document.getElementById("fabBtn");
+const menu = window.parent.document.getElementById("fabMenu");
+if (btn) {
+  btn.onclick = () => {
+    menu.classList.toggle("show");
+    btn.classList.toggle("open");
+    btn.innerHTML = menu.classList.contains("show") ? "×" : "＋";
+  };
+}
+</script>
 """, unsafe_allow_html=True)
+
 
 # ---------- 본문 종료 (상단 고정 바용 오프셋 div 닫기) ----------
 st.markdown('</div>', unsafe_allow_html=True)
