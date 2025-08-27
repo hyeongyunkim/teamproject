@@ -212,36 +212,29 @@ with tab3:
     st.markdown(f"<div style='text-align:center'><a href='{link}' target='_blank'>👉 꽃바구니 주문하기</a></div>",unsafe_allow_html=True)
 
 # -------------------- 플로팅 상담 버튼 --------------------
-# -------------------- 플로팅 + 버튼 --------------------
+# 세션 상태에 버튼 상태 저장
 if "fab_open" not in st.session_state:
     st.session_state.fab_open = False
 
-# 버튼 토글
-def toggle_fab():
-    st.session_state.fab_open = not st.session_state.fab_open
-
-# CSS로 오른쪽 하단 고정
+# CSS: 오른쪽 하단 고정
 st.markdown("""
 <style>
 .fab-container {
     position: fixed;
-    bottom: 24px;
-    right: 24px;
+    bottom: 20px;
+    right: 20px;
     z-index: 10000;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
 }
 .fab-main {
-    width: 56px; height: 56px;
+    width: 60px; height: 60px;
     border-radius: 50%;
-    background: #CFA18D; color: white;
-    font-size: 28px; font-weight: bold;
+    background: #CFA18D; color: #fff;
+    font-size: 32px; font-weight: bold;
     border: none; cursor: pointer;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
 }
 .fab-menu {
-    margin-bottom: 10px;
+    margin-bottom: 12px;
     display: flex;
     flex-direction: column;
     align-items: flex-end;
@@ -261,19 +254,23 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# HTML + Streamlit 버튼 결합
-with st.container():
-    st.markdown('<div class="fab-container">', unsafe_allow_html=True)
+# HTML 영역
+st.markdown('<div class="fab-container">', unsafe_allow_html=True)
 
-    # 펼쳐진 상태일 때만 메뉴 표시
-    if st.session_state.fab_open:
-        st.markdown("""
-        <div class="fab-menu">
-            <a class="fab-item" href="https://pf.kakao.com/_example" target="_blank">💬 카카오톡 문의</a>
-            <a class="fab-item" href="tel:010-1234-5678">📞 전화 문의</a>
-            <a class="fab-item" href="mailto:help@foreverpet.com">✉️ 이메일 문의</a>
-        </div>
-        """, unsafe_allow_html=True)
+# fab_open이 True일 때 메뉴 보여주기
+if st.session_state.fab_open:
+    st.markdown("""
+    <div class="fab-menu">
+        <a class="fab-item" href="https://pf.kakao.com/_example" target="_blank">💬 카카오톡 문의</a>
+        <a class="fab-item" href="tel:010-1234-5678">📞 전화 문의</a>
+        <a class="fab-item" href="mailto:help@foreverpet.com">✉️ 이메일 문의</a>
+    </div>
+    """, unsafe_allow_html=True)
 
-    #
+# 메인 + / ✕ 버튼
+if st.button("✕" if st.session_state.fab_open else "+", key="fab_main"):
+    st.session_state.fab_open = not st.session_state.fab_open
+
+st.markdown('</div>', unsafe_allow_html=True)
+
 
