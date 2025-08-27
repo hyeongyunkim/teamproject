@@ -89,6 +89,15 @@ st.markdown("""
         display:block;
         border-radius: 10px;
     }
+
+    /* --- 갤러리 썸네일: 일정 높이(cover)로 균일 표시 --- */
+    .photo-frame .thumb {
+        width: 100%;
+        height: 220px;       /* 필요 시 180~260px로 조절 */
+        object-fit: cover;   /* 중앙 기준 잘라내기 */
+        display: block;
+        border-radius: 10px;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -206,7 +215,7 @@ with tab1:
     if not lines:
         st.info("아직 등록된 메시지가 없습니다.")
     else:
-        for idx, line in enumerate(reversed(lines)):
+        for idx, line in enumerate(reversed(lines)):  # 최신이 위로
             try:
                 time_str, user, msg = line.strip().split("|", 2)
             except ValueError:
@@ -235,14 +244,15 @@ with tab1:
                 )
             with c2:
                 if st.button("❌", key=f"delete_msg_{idx}"):
-                    lines.pop(len(lines) - 1 - idx)
+                    lines.pop(len(lines) - 1 - idx)  # 역순 보정
                     with open("guestbook.txt", "w", encoding="utf-8") as f:
                         f.writelines(lines)
                     st.rerun()
 
-    # --- 온라인 추모관 (업로드/삭제) ---
+    # --- 온라인 추모관 (업로드/삭제/갤러리) ---
     st.subheader("🖼️ 온라인 추모관")
 
+    # 업로드(중복 방지: SHA-256)
     with st.form("gallery_upload", clear_on_submit=True):
         uploaded_file = st.file_uploader("사진 업로드", type=["png", "jpg", "jpeg"])
         submit = st.form_submit_button("업로드")
@@ -262,21 +272,22 @@ with tab1:
             st.success(f"{uploaded_file.name} 업로드 완료!")
         st.rerun()
 
+    # ===== 갤러리: 한 줄에 3장, 일정 크기 썸네일 =====
     image_files = sorted([
         f for f in os.listdir(UPLOAD_FOLDER)
         if f.lower().endswith((".png", ".jpg", ".jpeg"))
     ])
+
     if image_files:
-        cols_count = 3 if len(image_files) >= 3 else max(1, len(image_files))
-        cols = st.columns(cols_count)
+        cols = st.columns(3)  # 3열 고정
         for idx, img_file in enumerate(image_files):
             img_path = os.path.join(UPLOAD_FOLDER, img_file)
-            with cols[idx % cols_count]:
+            with cols[idx % 3]:
                 data_uri = img_file_to_data_uri(img_path)
                 st.markdown(
                     f"""
                     <div class="photo-frame">
-                        <img src="{data_uri}" alt="memorial photo">
+                        <img class="thumb" src="{data_uri}" alt="memorial photo">
                     </div>
                     """,
                     unsafe_allow_html=True
