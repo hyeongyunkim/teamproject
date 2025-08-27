@@ -4,6 +4,7 @@ import uuid
 import hashlib
 import base64
 import mimetypes
+import shutil
 from datetime import datetime
 import html  # 메시지 안전 표시용 (특수문자 이스케이프)
 
@@ -112,6 +113,7 @@ UPLOAD_FOLDER = "uploaded_images"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 def build_image_list():
+    """대표 이미지 + 업로드 이미지 목록"""
     base_img = "https://github.com/hyeongyunkim/teamproject/raw/main/petfuneral.png"
     uploaded = [
         os.path.join(UPLOAD_FOLDER, f)
@@ -136,6 +138,17 @@ def img_file_to_data_uri(path: str) -> str:
     with open(path, "rb") as f:
         b64 = base64.b64encode(f.read()).decode("utf-8")
     return f"data:{mime};base64,{b64}"
+
+# ====== 갤러리 초기화(사진만) ======
+def reset_gallery():
+    """업로드된 모든 사진을 삭제하고 온라인 추모관을 초기화"""
+    if os.path.exists(UPLOAD_FOLDER):
+        shutil.rmtree(UPLOAD_FOLDER)  # 폴더 통째 삭제
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)  # 빈 폴더 재생성
+    if "carousel_idx" in st.session_state:
+        del st.session_state["carousel_idx"]
+    st.success("✅ 사진이 모두 삭제되어 초기 상태로 돌아갔습니다.")
+    st.rerun()
 
 # -------------------- 상단 탭 --------------------
 tab1, tab2, tab3 = st.tabs(["📜 부고장/방명록/추모관", "📺 장례식 스트리밍", "💐 기부/꽃바구니"])
@@ -235,7 +248,7 @@ with tab1:
                 )
             with c2:
                 if st.button("❌", key=f"delete_msg_{idx}"):
-                    lines.pop(len(lines) - 1 - idx)
+                    lines.pop(len(lines) - 1 - idx)  # 역순 보정
                     with open("guestbook.txt", "w", encoding="utf-8") as f:
                         f.writelines(lines)
                     st.rerun()
@@ -243,6 +256,17 @@ with tab1:
     # --- 온라인 추모관 (업로드/삭제) ---
     st.subheader("🖼️ 온라인 추모관")
 
+    # 사진 전체 삭제 초기화 (방명록은 유지)
+    with st.expander("🧹 온라인 추모관 초기화", expanded=False):
+        st.warning("⚠️ 업로드된 모든 사진이 삭제됩니다. 되돌릴 수 없습니다.")
+        agree = st.checkbox("사진 전체 삭제에 동의합니다.")
+        if st.button("사진 전체 삭제"):
+            if agree:
+                reset_gallery()
+            else:
+                st.error("삭제에 동의해 주세요.")
+
+    # 업로드(중복 방지: SHA-256)
     with st.form("gallery_upload", clear_on_submit=True):
         uploaded_file = st.file_uploader("사진 업로드", type=["png", "jpg", "jpeg"])
         submit = st.form_submit_button("업로드")
