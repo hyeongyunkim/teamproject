@@ -2,6 +2,7 @@ import streamlit as st
 import os
 import uuid
 from datetime import datetime
+import html  # 메시지 안전 표시용 (특수문자 이스케이프)
 
 # -------------------- 페이지 기본 설정 --------------------
 st.set_page_config(page_title="반려견 추모관", page_icon="🐾", layout="wide")
@@ -24,6 +25,35 @@ st.markdown("""
         border-bottom: 1px solid #EED7CA;
     }
     .nav-divider { height:8px; }
+
+    /* ---------- 방명록 카드 스타일 ---------- */
+    .guest-card {
+        background: linear-gradient(180deg, #FFF8F1 0%, #FFFFFF 100%);
+        border: 1px solid #EED7CA;
+        border-left: 6px solid #CFA18D;
+        border-radius: 14px;
+        padding: 14px 16px;
+        margin: 10px 0 16px 0;
+        box-shadow: 0 4px 10px rgba(79, 56, 50, 0.08);
+    }
+    .guest-card-header {
+        display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+    }
+    .guest-avatar {
+        width: 34px; height: 34px; min-width:34px;
+        border-radius: 50%;
+        background: #F0D9CF; color:#4B3832;
+        display:flex; align-items:center; justify-content:center;
+        font-weight: 700;
+    }
+    .guest-name-time {
+        display:flex; flex-direction:column; line-height:1.2;
+    }
+    .guest-name { font-weight:700; }
+    .guest-time { font-size:12px; color:#8B6F66; }
+    .guest-msg {
+        font-size:16px; color:#4B3832; white-space:pre-wrap; margin: 6px 0 0 0;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -33,27 +63,22 @@ with st.container():
     left, right = st.columns([1.8, 6.2], gap="large")
     with left:
         st.markdown("### 🐾 Pet Memorialization")
-        st.caption("소중한 반려견을 추모하는 공간")
+        st.markdown(
+            "<p style='font-size:18px; font-weight:500; color:#5A3E36;'>소중한 반려견을 추모하는 공간</p>",
+            unsafe_allow_html=True
+        )
     with right:
-        # 메뉴 상태 초기화
         if "active_menu" not in st.session_state:
             st.session_state.active_menu = "📜 부고장/방명록/추모관"
 
         options = ["📜 부고장/방명록/추모관", "📺 장례식 스트리밍", "💐 기부/꽃바구니"]
-        # 현재 선택된 옵션의 인덱스 찾기
         current_idx = options.index(st.session_state.active_menu) if st.session_state.active_menu in options else 0
 
-        # 상단 오른쪽에 가로 라디오(탭형) 배치
         picked = st.radio(
-            "메뉴",
-            options=options,
-            index=current_idx,
-            horizontal=True,
-            label_visibility="collapsed",
+            "메뉴", options=options, index=current_idx, horizontal=True, label_visibility="collapsed",
         )
         if picked != st.session_state.active_menu:
             st.session_state.active_menu = picked
-            # Streamlit은 상호작용 시 자동 재실행되므로 별도 st.rerun() 불필요
 
 st.markdown('<div class="nav-divider"></div>', unsafe_allow_html=True)
 
@@ -62,7 +87,6 @@ UPLOAD_FOLDER = "uploaded_images"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 def build_image_list():
-    """대표 이미지 + 업로드 이미지 목록(정렬)"""
     base_img = "https://github.com/hyeongyunkim/teamproject/raw/main/petfuneral.png"
     uploaded = [
         os.path.join(UPLOAD_FOLDER, f)
@@ -70,6 +94,13 @@ def build_image_list():
         if f.lower().endswith((".png", ".jpg", ".jpeg"))
     ]
     return [base_img] + sorted(uploaded)
+
+def initials_from_name(name: str) -> str:
+    name = name.strip()
+    if not name:
+        return "🕊️"
+    # 한글/영문 모두 첫 글자만 추출
+    return name[0].upper()
 
 # -------------------- 페이지 라우팅 --------------------
 menu = st.session_state.active_menu
@@ -79,7 +110,7 @@ if menu == "📜 부고장/방명록/추모관":
     st.markdown("<h2 style='text-align:center;'>In Loving Memory</h2>", unsafe_allow_html=True)
     st.markdown("<p style='text-align:center;'>소중한 반려견을 추모할 수 있는 공간입니다</p>", unsafe_allow_html=True)
 
-    # --- 대표 이미지 캐러셀 (순수 Streamlit 구현) ---
+    # --- 대표 이미지 캐러셀 ---
     img_list = build_image_list()
     n = len(img_list)
 
@@ -94,16 +125,12 @@ if menu == "📜 부고장/방명록/추모관":
     with img_col:
         st.image(
             img_list[st.session_state.carousel_idx],
-            use_container_width=True,
+            width=500,  # 👈 대표 이미지 크기 고정
             caption=f"{st.session_state.carousel_idx + 1} / {n}",
         )
     with nav_next:
         if st.button("▶", key="carousel_next"):
             st.session_state.carousel_idx = (st.session_state.carousel_idx + 1) % n
-
-    if st.button("🔍 크게 보기", key="carousel_zoom"):
-        with st.modal("대표 이미지 크게 보기"):
-            st.image(img_list[st.session_state.carousel_idx], use_column_width=True)
 
     # --- 부고장 ---
     st.subheader("📜 부고장")
@@ -130,13 +157,14 @@ if menu == "📜 부고장/방명록/추모관":
     if st.button("추모 메시지 남기기"):
         if name and message:
             with open("guestbook.txt", "a", encoding="utf-8") as f:
+                # 파이프(|) 구분자 유지
                 f.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}|{name}|{message}\n")
             st.success("메시지가 등록되었습니다. 고맙습니다.")
             st.rerun()
         else:
             st.warning("이름과 메시지를 입력해주세요.")
 
-    # --- 방명록 목록 + 삭제 ---
+    # --- 방명록 목록(카드) + 삭제 ---
     st.subheader("📖 추모 메시지 모음")
     try:
         with open("guestbook.txt", "r", encoding="utf-8") as f:
@@ -147,17 +175,37 @@ if menu == "📜 부고장/방명록/추모관":
     if not lines:
         st.info("아직 등록된 메시지가 없습니다.")
     else:
-        for idx, line in enumerate(reversed(lines)):
+        for idx, line in enumerate(reversed(lines)):  # 최신이 위로
             try:
                 time_str, user, msg = line.strip().split("|", 2)
             except ValueError:
                 continue
-            col1, col2 = st.columns([8,1])
-            with col1:
-                st.markdown(f"🕊️ **{user}** ({time_str})\n\n> {msg}")
-            with col2:
+
+            # 특수문자 안전 표시
+            user_safe = html.escape(user)
+            time_safe = html.escape(time_str)
+            msg_safe = html.escape(msg)
+
+            c1, c2 = st.columns([12, 1])
+            with c1:
+                st.markdown(
+                    f"""
+                    <div class="guest-card">
+                        <div class="guest-card-header">
+                            <div class="guest-avatar">{html.escape(initials_from_name(user))}</div>
+                            <div class="guest-name-time">
+                                <span class="guest-name">🕊️ {user_safe}</span>
+                                <span class="guest-time">{time_safe}</span>
+                            </div>
+                        </div>
+                        <div class="guest-msg">{msg_safe}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+            with c2:
                 if st.button("❌", key=f"delete_msg_{idx}"):
-                    # 화면은 역순이므로 실제 인덱스 보정
+                    # 역순 표출 → 실제 인덱스 보정
                     lines.pop(len(lines) - 1 - idx)
                     with open("guestbook.txt", "w", encoding="utf-8") as f:
                         f.writelines(lines)
