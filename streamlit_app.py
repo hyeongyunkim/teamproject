@@ -71,9 +71,6 @@ st.markdown("""
         box-shadow: 0 2px 6px rgba(207,161,141,.35);
     }
 
-    /* --- 부고장 위 대표 이미지 가운데 정렬 --- */
-    .centered-img { display:flex; justify-content:center; }
-
     /* --- 온라인 추모관 액자 스타일 --- */
     .photo-frame {
         background:#fff;
@@ -83,25 +80,19 @@ st.markdown("""
         padding: 10px;
         margin-bottom: 12px;
     }
-    .photo-frame img {
-        width: 100%;
-        height: auto;
-        display:block;
-        border-radius: 10px;
-    }
 
-    /* --- 갤러리 썸네일: 일정 높이(cover)로 균일 표시 --- */
+    /* --- 정사각형 썸네일 --- */
     .photo-frame .thumb {
         width: 100%;
-        height: 220px;       /* 필요 시 180~260px로 조절 */
-        object-fit: cover;   /* 중앙 기준 잘라내기 */
+        aspect-ratio: 1 / 1;   /* 정사각형 */
+        object-fit: cover;
         display: block;
         border-radius: 10px;
     }
 
-    /* --- 상단 캐러셀용 액자(조금 더 여백) --- */
+    /* --- 상단 캐러셀용 액자 --- */
     .photo-frame.hero {
-        max-width: 560px;    /* 가운데 좁게 */
+        max-width: 560px;
         margin: 0 auto 8px auto;
     }
     </style>
@@ -127,7 +118,6 @@ UPLOAD_FOLDER = "uploaded_images"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 def build_image_list():
-    """대표 이미지 + 업로드 이미지 목록 (대표 이미지는 URL)"""
     base_img = "https://github.com/hyeongyunkim/teamproject/raw/main/petfuneral.png"
     uploaded = [
         os.path.join(UPLOAD_FOLDER, f)
@@ -153,7 +143,7 @@ def img_file_to_data_uri(path: str) -> str:
         b64 = base64.b64encode(f.read()).decode("utf-8")
     return f"data:{mime};base64,{b64}"
 
-# -------------------- 상단 탭 --------------------
+# -------------------- 탭 --------------------
 tab1, tab2, tab3 = st.tabs(["📜 부고장/방명록/추모관", "📺 장례식 스트리밍", "💐 기부/꽃바구니"])
 
 # ==================== ① 부고장/방명록/추모관 ====================
@@ -161,25 +151,23 @@ with tab1:
     st.markdown("<h2 style='text-align:center;'>In Loving Memory</h2>", unsafe_allow_html=True)
     st.markdown("<p style='text-align:center;'>소중한 반려견을 추모할 수 있는 공간입니다</p>", unsafe_allow_html=True)
 
-    # --- 대표 이미지 캐러셀 (액자 스타일 + 총 장수/인덱스) ---
+    # --- 대표 이미지 캐러셀 ---
     img_list = build_image_list()
-    n = len(img_list)                   # 대표 + 업로드 포함
-    total_photos = max(0, n - 1)        # 업로드 사진 수 (대표 제외)
+    n = len(img_list)
+    total_photos = max(0, n - 1)  # 업로드된 사진 개수 (대표 제외)
 
     if "carousel_idx" not in st.session_state:
         st.session_state.carousel_idx = 0
     st.session_state.carousel_idx %= max(n, 1)
 
-    nav_prev, mid, nav_next = st.columns([1,6,1])
-    with nav_prev:
+    prev, mid, nextb = st.columns([1,6,1])
+    with prev:
         if st.button("◀", key="carousel_prev"):
             st.session_state.carousel_idx = (st.session_state.carousel_idx - 1) % n
 
     with mid:
         current = img_list[st.session_state.carousel_idx]
-        # 액자 형태로 표시 (상단 캐러셀 전용 hero 프레임)
-        if current.startswith("http://") or current.startswith("https://"):
-            # 대표 이미지(URL)
+        if current.startswith("http"):
             st.markdown(
                 f"""
                 <div class="photo-frame hero">
@@ -189,43 +177,37 @@ with tab1:
                 unsafe_allow_html=True
             )
         else:
-            # 업로드 이미지(Data URI로 액자 안에)
             data_uri = img_file_to_data_uri(current)
             st.markdown(
                 f"""
                 <div class="photo-frame hero">
-                    <img src="{data_uri}" alt="memorial hero">
+                    <img class="thumb" src="{data_uri}" alt="memorial hero">
                 </div>
                 """,
                 unsafe_allow_html=True
             )
 
-        # 인덱스/총 장수 안내
         st.markdown(
             f"<p style='text-align:center; color:#6C5149;'>"
-            f"<b>{st.session_state.carousel_idx + 1} / {n}</b> &nbsp;•&nbsp; "
+            f"<b>{st.session_state.carousel_idx + 1} / {n}</b> • "
             f"현재 업로드된 사진: <b>{total_photos}장</b>"
-            f"</p>",
-            unsafe_allow_html=True
+            f"</p>", unsafe_allow_html=True
         )
 
-    with nav_next:
+    with nextb:
         if st.button("▶", key="carousel_next"):
             st.session_state.carousel_idx = (st.session_state.carousel_idx + 1) % n
 
     # --- 부고장 ---
     st.subheader("📜 부고장")
-    pet_name = "초코"
-    birth_date = "2015-03-15"
-    death_date = "2024-08-10"
     st.markdown(
-        f"""
+        """
         <div style="text-align:center; background-color:#FAE8D9; padding:15px; border-radius:15px; margin:10px;">
-        사랑하는 반려견 <b>{pet_name}</b> 이(가) 무지개다리를 건넜습니다.<br>
+        사랑하는 반려견 <b>초코</b> 이(가) 무지개다리를 건넜습니다.<br>
         함께한 시간들을 기억하며 따뜻한 마음으로 추모해주세요.
         <br><br>
-        🐾 <b>태어난 날:</b> {birth_date} <br>
-        🌈 <b>무지개다리 건넌 날:</b> {death_date}
+        🐾 <b>태어난 날:</b> 2015-03-15 <br>
+        🌈 <b>무지개다리 건넌 날:</b> 2024-08-10
         </div>
         """,
         unsafe_allow_html=True
@@ -244,90 +226,62 @@ with tab1:
         else:
             st.warning("이름과 메시지를 입력해주세요.")
 
-    # --- 방명록 목록(카드) + 삭제 ---
+    # --- 방명록 모음 ---
     st.subheader("📖 추모 메시지 모음")
     try:
         with open("guestbook.txt", "r", encoding="utf-8") as f:
             lines = f.readlines()
     except FileNotFoundError:
         lines = []
-
     if not lines:
         st.info("아직 등록된 메시지가 없습니다.")
     else:
-        for idx, line in enumerate(reversed(lines)):  # 최신이 위로
+        for idx, line in enumerate(reversed(lines)):
             try:
                 time_str, user, msg = line.strip().split("|", 2)
             except ValueError:
                 continue
-
-            user_safe = html.escape(user)
-            time_safe = html.escape(time_str)
-            msg_safe = html.escape(msg)
-
-            c1, c2 = st.columns([12, 1])
-            with c1:
-                st.markdown(
-                    f"""
-                    <div class="guest-card">
-                        <div class="guest-card-header">
-                            <div class="guest-avatar">{html.escape(initials_from_name(user))}</div>
-                            <div class="guest-name-time">
-                                <span class="guest-name">🕊️ {user_safe}</span>
-                                <span class="guest-time">{time_safe}</span>
-                            </div>
+            st.markdown(
+                f"""
+                <div class="guest-card">
+                    <div class="guest-card-header">
+                        <div class="guest-avatar">{html.escape(initials_from_name(user))}</div>
+                        <div class="guest-name-time">
+                            <span class="guest-name">🕊️ {html.escape(user)}</span>
+                            <span class="guest-time">{html.escape(time_str)}</span>
                         </div>
-                        <div class="guest-msg">{msg_safe}</div>
                     </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-            with c2:
-                if st.button("❌", key=f"delete_msg_{idx}"):
-                    lines.pop(len(lines) - 1 - idx)  # 역순 보정
-                    with open("guestbook.txt", "w", encoding="utf-8") as f:
-                        f.writelines(lines)
-                    st.rerun()
+                    <div class="guest-msg">{html.escape(msg)}</div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
 
-    # --- 온라인 추모관 (업로드/삭제/갤러리) ---
+    # --- 온라인 추모관 ---
     st.subheader("🖼️ 온라인 추모관")
-
-    # ✅ 여러 장 업로드 가능 + 중복 방지(해시)
     with st.form("gallery_upload", clear_on_submit=True):
         uploaded_files = st.file_uploader("사진 업로드", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
         submit = st.form_submit_button("업로드")
 
     if submit and uploaded_files:
-        saved = 0
-        dup = 0
         for uploaded_file in uploaded_files:
             data = uploaded_file.getvalue()
             digest = file_sha256(data)[:16]
-            # 같은 해시가 이미 있으면 스킵
             if any(f.startswith(digest + "_") for f in os.listdir(UPLOAD_FOLDER)):
-                dup += 1
                 continue
             safe_name = "".join(c for c in uploaded_file.name if c not in "\\/:*?\"<>|")
             filename = f"{digest}_{safe_name}"
-            save_path = os.path.join(UPLOAD_FOLDER, filename)
-            with open(save_path, "wb") as f:
+            with open(os.path.join(UPLOAD_FOLDER, filename), "wb") as f:
                 f.write(data)
-            saved += 1
-
-        if saved:
-            st.success(f"{saved}장 업로드 완료!")
-        if dup:
-            st.info(f"중복으로 제외된 사진: {dup}장")
+        st.success("사진 업로드 완료!")
         st.rerun()
 
-    # ===== 갤러리: 한 줄에 3장, 일정 크기 썸네일(액자) =====
     image_files = sorted([
         f for f in os.listdir(UPLOAD_FOLDER)
         if f.lower().endswith((".png", ".jpg", ".jpeg"))
     ])
-
     if image_files:
-        cols = st.columns(3)  # 3열 고정
+        cols = st.columns(3)
         for idx, img_file in enumerate(image_files):
             img_path = os.path.join(UPLOAD_FOLDER, img_file)
             with cols[idx % 3]:
@@ -341,29 +295,19 @@ with tab1:
                     unsafe_allow_html=True
                 )
                 if st.button("삭제", key=f"delete_img_{idx}"):
-                    if os.path.exists(img_path):
-                        os.remove(img_path)
+                    os.remove(img_path)
                     st.rerun()
     else:
         st.info("아직 업로드된 사진이 없습니다.")
 
-# ==================== ② 장례식 실시간 스트리밍 ====================
+# ==================== ② 장례식 스트리밍 ====================
 with tab2:
     st.header("📺 장례식 실시간 스트리밍")
-    st.markdown("아래에 YouTube 임베드 링크를 입력하세요 (예: https://www.youtube.com/embed/영상ID)")
-    video_url = st.text_input("YouTube 영상 URL 입력", "https://www.youtube.com/embed/dQw4w9WgXcQ")
-    st.markdown(
-        f"<div style='text-align:center;'><iframe width='560' height='315' src='{video_url}' frameborder='0' allowfullscreen></iframe></div>",
-        unsafe_allow_html=True
-    )
+    video_url = st.text_input("YouTube 영상 URL", "https://www.youtube.com/embed/dQw4w9WgXcQ")
+    st.markdown(f"<div style='text-align:center;'><iframe width='560' height='315' src='{video_url}' frameborder='0' allowfullscreen></iframe></div>", unsafe_allow_html=True)
 
-# ==================== ③ 기부 / 꽃바구니 주문 ====================
+# ==================== ③ 기부 / 꽃바구니 ====================
 with tab3:
     st.header("💐 조문객 기부 / 꽃바구니 주문")
-    st.markdown("- 💳 기부: 카카오페이 / 토스 / 계좌이체 연동 가능\n- 🌹 꽃바구니 주문: 온라인 꽃집 링크 연결 가능")
     link = st.text_input("꽃바구니 주문 링크", "https://www.naver.com")
-    st.markdown(
-        f"<div style='text-align:center;'><a href='{link}' target='_blank' "
-        f"style='font-size:18px; color:#CFA18D; font-weight:bold;'>👉 꽃바구니 주문하러 가기</a></div>",
-        unsafe_allow_html=True
-    )
+    st.markdown(f"<div style='text-align:center;'><a href='{link}' target='_blank' style='font-size:18px; color:#CFA18D; font-weight:bold;'>👉 꽃바구니 주문하러 가기</a></div>", unsafe_allow_html=True)
