@@ -15,6 +15,7 @@ st.markdown("""
     .stButton>button {
         background-color: #CFA18D; color: white; border-radius: 10px;
         padding: 6px 15px; border: none; font-size: 14px;
+        transition: all .15s ease;
     }
     .stButton>button:hover { background-color: #D9A7A0; color: #fff; }
     .stTextInput>div>div>input, .stTextArea textarea {
@@ -36,23 +37,31 @@ st.markdown("""
         margin: 10px 0 16px 0;
         box-shadow: 0 4px 10px rgba(79, 56, 50, 0.08);
     }
-    .guest-card-header {
-        display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
-    }
+    .guest-card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
     .guest-avatar {
-        width: 34px; height: 34px; min-width:34px;
-        border-radius: 50%;
-        background: #F0D9CF; color:#4B3832;
-        display:flex; align-items:center; justify-content:center;
-        font-weight: 700;
+        width: 34px; height: 34px; min-width:34px; border-radius: 50%;
+        background: #F0D9CF; color:#4B3832; display:flex; align-items:center; justify-content:center; font-weight: 700;
     }
-    .guest-name-time {
-        display:flex; flex-direction:column; line-height:1.2;
-    }
+    .guest-name-time { display:flex; flex-direction:column; line-height:1.2; }
     .guest-name { font-weight:700; }
     .guest-time { font-size:12px; color:#8B6F66; }
-    .guest-msg {
-        font-size:16px; color:#4B3832; white-space:pre-wrap; margin: 6px 0 0 0;
+    .guest-msg { font-size:16px; color:#4B3832; white-space:pre-wrap; margin: 6px 0 0 0; }
+
+    /* ---------- 상단 메뉴(필 네비게이션) ---------- */
+    .pill-nav-wrap {
+        display:flex; align-items:center; justify-content:flex-end; gap:8px;
+        background:#FFF6EE; padding:8px; border-radius:14px;
+        border:1px solid #EED7CA;
+    }
+    .pill-btn {
+        background:#fff; color:#4B3832; border:1px solid #EED7CA;
+        border-radius:999px; padding:8px 14px; font-size:14px; font-weight:600;
+        cursor:pointer; transition: all .15s ease; white-space:nowrap;
+    }
+    .pill-btn:hover { background:#FAE8D9; border-color:#E4C9BB; }
+    .pill-btn.active {
+        background:#CFA18D; color:#fff; border-color:#CFA18D;
+        box-shadow:0 2px 6px rgba(207,161,141,.35);
     }
     </style>
 """, unsafe_allow_html=True)
@@ -61,24 +70,55 @@ st.markdown("""
 with st.container():
     st.markdown('<div class="topbar"></div>', unsafe_allow_html=True)
     left, right = st.columns([1.8, 6.2], gap="large")
+
     with left:
         st.markdown("### 🐾 Pet Memorialization")
         st.markdown(
             "<p style='font-size:18px; font-weight:500; color:#5A3E36;'>소중한 반려견을 추모하는 공간</p>",
             unsafe_allow_html=True
         )
+
     with right:
+        # 메뉴 상태
         if "active_menu" not in st.session_state:
             st.session_state.active_menu = "📜 부고장/방명록/추모관"
 
         options = ["📜 부고장/방명록/추모관", "📺 장례식 스트리밍", "💐 기부/꽃바구니"]
-        current_idx = options.index(st.session_state.active_menu) if st.session_state.active_menu in options else 0
 
-        picked = st.radio(
-            "메뉴", options=options, index=current_idx, horizontal=True, label_visibility="collapsed",
-        )
-        if picked != st.session_state.active_menu:
-            st.session_state.active_menu = picked
+        # 맞춤형 필 네비게이션 (버튼 3개를 가로로)
+        st.markdown('<div class="pill-nav-wrap">', unsafe_allow_html=True)
+        c1, c2, c3 = st.columns([1,1,1])
+        # 각 버튼 스타일을 active 여부에 따라 다르게 적용
+        with c1:
+            if st.button("📜 부고장/방명록/추모관",
+                         key="menu_btn_1",
+                         help="부고장, 방명록, 추모관"):
+                st.session_state.active_menu = options[0]
+            st.markdown(
+                f"<script>var btn = window.parent.document.querySelector('button[kind=\"secondary\"]#menu_btn_1');</script>",
+                unsafe_allow_html=True
+            )
+            st.markdown(
+                f"<style>div[data-testid='stVerticalBlock'] button#menu_btn_1 {{}} </style>",
+                unsafe_allow_html=True
+            )
+        with c2:
+            if st.button("📺 장례식 스트리밍", key="menu_btn_2", help="실시간 스트리밍"):
+                st.session_state.active_menu = options[1]
+        with c3:
+            if st.button("💐 기부/꽃바구니", key="menu_btn_3", help="기부 및 꽃바구니"):
+                st.session_state.active_menu = options[2]
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # 버튼에 활성 클래스 부여(HTML로 표현)
+        active = st.session_state.active_menu
+        # 안내용: 시각적으로도 활성 상태를 보여주기 위해 아래 라벨을 렌더링
+        label_html = "<div class='pill-nav-wrap' style='gap:0; background:transparent; border:none; padding:0;'>"
+        for opt in options:
+            cls = "pill-btn active" if opt == active else "pill-btn"
+            label_html += f"<div style='margin-left:8px'><span class='{cls}'>{opt}</span></div>"
+        label_html += "</div>"
+        st.markdown(label_html, unsafe_allow_html=True)
 
 st.markdown('<div class="nav-divider"></div>', unsafe_allow_html=True)
 
@@ -99,7 +139,6 @@ def initials_from_name(name: str) -> str:
     name = name.strip()
     if not name:
         return "🕊️"
-    # 한글/영문 모두 첫 글자만 추출
     return name[0].upper()
 
 # -------------------- 페이지 라우팅 --------------------
@@ -125,7 +164,7 @@ if menu == "📜 부고장/방명록/추모관":
     with img_col:
         st.image(
             img_list[st.session_state.carousel_idx],
-            width=500,  # 👈 대표 이미지 크기 고정
+            width=500,
             caption=f"{st.session_state.carousel_idx + 1} / {n}",
         )
     with nav_next:
@@ -157,7 +196,6 @@ if menu == "📜 부고장/방명록/추모관":
     if st.button("추모 메시지 남기기"):
         if name and message:
             with open("guestbook.txt", "a", encoding="utf-8") as f:
-                # 파이프(|) 구분자 유지
                 f.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}|{name}|{message}\n")
             st.success("메시지가 등록되었습니다. 고맙습니다.")
             st.rerun()
@@ -175,13 +213,12 @@ if menu == "📜 부고장/방명록/추모관":
     if not lines:
         st.info("아직 등록된 메시지가 없습니다.")
     else:
-        for idx, line in enumerate(reversed(lines)):  # 최신이 위로
+        for idx, line in enumerate(reversed(lines)):
             try:
                 time_str, user, msg = line.strip().split("|", 2)
             except ValueError:
                 continue
 
-            # 특수문자 안전 표시
             user_safe = html.escape(user)
             time_safe = html.escape(time_str)
             msg_safe = html.escape(msg)
@@ -205,8 +242,7 @@ if menu == "📜 부고장/방명록/추모관":
                 )
             with c2:
                 if st.button("❌", key=f"delete_msg_{idx}"):
-                    # 역순 표출 → 실제 인덱스 보정
-                    lines.pop(len(lines) - 1 - idx)
+                    lines.pop(len(lines) - 1 - idx)  # 역순 보정
                     with open("guestbook.txt", "w", encoding="utf-8") as f:
                         f.writelines(lines)
                     st.rerun()
@@ -216,21 +252,21 @@ if menu == "📜 부고장/방명록/추모관":
     uploaded_file = st.file_uploader("사진 업로드", type=["png", "jpg", "jpeg"])
     if uploaded_file is not None:
         unique_filename = f"{uuid.uuid4()}_{uploaded_file.name}"
-        save_path = os.path.join(UPLOAD_FOLDER, unique_filename)
+        save_path = os.path.join("uploaded_images", unique_filename)
         with open(save_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
         st.success(f"{uploaded_file.name} 업로드 완료!")
         st.rerun()
 
     image_files = sorted([
-        f for f in os.listdir(UPLOAD_FOLDER)
+        f for f in os.listdir("uploaded_images")
         if f.lower().endswith((".png", ".jpg", ".jpeg"))
     ])
     if image_files:
         cols_count = 3 if len(image_files) >= 3 else max(1, len(image_files))
         cols = st.columns(cols_count)
         for idx, img_file in enumerate(image_files):
-            img_path = os.path.join(UPLOAD_FOLDER, img_file)
+            img_path = os.path.join("uploaded_images", img_file)
             with cols[idx % cols_count]:
                 st.image(img_path, width=200, caption="🌸 추억의 사진 🌸")
                 if st.button("삭제", key=f"delete_img_{idx}"):
