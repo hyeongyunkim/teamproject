@@ -7,31 +7,6 @@ from datetime import datetime
 import html  # 메시지 안전 표시용 (특수문자 이스케이프)
 
 # -------------------- 페이지 기본 설정 --------------------
-st.markdown(
-    f"""
-    <div class="hero">
-      <div class="hero-grid">
-        <div>
-          <div style="font-size:26px; font-weight:900; color:#4B3832; margin-bottom:6px;">
-            🐾 Pet Memorialization
-          </div>
-          <div class="tagline">소중한 반려견을 추모하는 공간</div>
-          <div class="badges">
-            <span class="badge"><span class="dot"></span> 사진 {photo_count}장</span>
-            <span class="badge"><span class="dot"></span> 방명록 {message_count}개</span>
-          </div>
-        </div>
-        <div class="hero-visual">
-          <div class="kv">
-            <img src="{BASE_IMG_URL}" alt="memorial">
-          </div>
-        </div>
-      </div>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
-
 st.set_page_config(page_title="반려견 추모관", page_icon="🐾", layout="wide")
 
 # -------------------- 색감/스타일 --------------------
