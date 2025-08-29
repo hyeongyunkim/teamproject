@@ -7,7 +7,7 @@ from datetime import datetime
 import html  # 메시지 안전 표시용 (특수문자 이스케이프)
 
 # -------------------- 페이지 기본 설정 --------------------
-st.set_page_config(page_title="반려동물 추모관", page_icon="🐾", layout="wide")
+st.set_page_config(page_title="반려견 추모관", page_icon="🐾", layout="wide")
 
 # -------------------- 색감/스타일 --------------------
 st.markdown("""
@@ -118,7 +118,7 @@ st.markdown("""
         margin-left:auto; margin-right:auto;
     }
     .photo-frame.hero-frame .thumb{
-        width:60%;        /* 2배 확대 후 30% 축소 → 현재 60% 유지 */
+        width:60%;
         height:auto;
         object-fit:contain;
         display:block;
@@ -132,8 +132,8 @@ st.markdown("""
         border-radius:16px; padding:10px; margin-bottom:12px;
     }
     .photo-frame.gallery-frame .thumb{
-        width:50%;        /* 기존 100% → 절반 */
-        height:auto;      /* 원본 비율 유지 */
+        width:50%;
+        height:auto;
         object-fit:contain;
         display:block;
         border-radius:10px;
@@ -198,7 +198,10 @@ st.markdown(
     <div class="hero">
       <div class="hero-grid">
         <div>
-          <div class="tagline">소중한 반려동물을 추모하는 공간</div>
+          <div style="font-size:26px; font-weight:900; color:#4B3832; margin-bottom:6px;">
+            🐾 Pet Memorialization
+          </div>
+          <div class="tagline">소중한 반려견을 추모하는 공간</div>
           <div class="badges">
             <span class="badge"><span class="dot"></span> 사진 {photo_count}장</span>
             <span class="badge"><span class="dot"></span> 방명록 {message_count}개</span>
@@ -214,8 +217,9 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-st.markdown('</div>', unsafe_allow_html=True)  # /page-wrap
+st.markdown('</div>', unsafe_allow_html=True)  
 st.markdown('<div class="nav-divider"></div>', unsafe_allow_html=True)
+
 
 # -------------------- 탭 --------------------
 tab1, tab2, tab3 = st.tabs(["📜 부고장/방명록/추모관", "📺 장례식 스트리밍", "💐 기부/꽃바구니"])
