@@ -7,7 +7,7 @@ from datetime import datetime
 import html  # 메시지 안전 표시용 (특수문자 이스케이프)
 
 # -------------------- 페이지 기본 설정 --------------------
-st.set_page_config(page_title="반려견 추모관", page_icon="🐾", layout="wide")
+st.set_page_config(page_title="반려동물 추모관", page_icon="🐾", layout="wide")
 
 # -------------------- 색감/스타일 --------------------
 st.markdown("""
