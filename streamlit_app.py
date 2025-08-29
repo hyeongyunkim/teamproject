@@ -118,7 +118,7 @@ st.markdown("""
         margin-left:auto; margin-right:auto;
     }
     .photo-frame.hero-frame .thumb{
-        width:86%;        /* 기존보다 2배 확대 */
+        width:60%;        /* 2배 확대 후 30% 축소 → 현재 60% 유지 */
         height:auto;
         object-fit:contain;
         display:block;
@@ -126,13 +126,13 @@ st.markdown("""
         margin:0 auto;
     }
 
-    /* ---------- 온라인 추모관 갤러리 ---------- */
+    /* ---------- 온라인 추모관 갤러리 (절반 크기) ---------- */
     .photo-frame.gallery-frame{
         background:#fff; border: 6px solid #F3E2D8; box-shadow: 0 8px 18px rgba(79,56,50,0.12);
         border-radius:16px; padding:10px; margin-bottom:12px;
     }
     .photo-frame.gallery-frame .thumb{
-        width:100%;
+        width:50%;        /* 기존 100% → 절반 */
         height:auto;      /* 원본 비율 유지 */
         object-fit:contain;
         display:block;
