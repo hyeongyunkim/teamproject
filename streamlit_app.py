@@ -33,8 +33,9 @@ st.markdown("""
         letter-spacing: -0.3px;
         line-height:1;
     }
-    /* 본문 여백 */
-    .main-block { margin-top: 74px; }
+
+    /* 본문 여백 (오른쪽 사이드바 공간을 위해 우측 마진 추가) */
+    .main-block { margin-top: 74px; margin-right: 360px; }
 
     /* 공통 버튼 */
     .stButton>button{
@@ -120,6 +121,36 @@ st.markdown("""
         width:70%; height:auto; object-fit:contain;
         display:block; border-radius:10px; margin:0 auto;
     }
+
+    /* ====== 여기부터: 사이드바를 '오른쪽 상단'으로 옮기는 CSS ====== */
+    /* 사이드바 자체를 오른쪽에 고정 */
+    section[data-testid="stSidebar"] {
+        position: fixed !important;
+        right: 0;
+        left: auto;
+        top: 60px;              /* 상단 고정바(60px) 아래부터 시작 */
+        height: calc(100% - 60px);
+        width: 340px;           /* 사이드바 너비 */
+        border-left: 1px solid var(--line);
+        border-right: none;
+        background-color: #FAE8D9;
+        z-index: 1001;
+        padding-top: 10px;
+    }
+    /* 기본 레이아웃이 왼쪽에 남기는 여백 무효화 (우측으로 옮겼으니 좌측 여백 제거) */
+    [data-testid="stSidebarNav"] { display:none !important; }
+
+    /* 작은 화면에서는 강제 고정 해제해 기본 동작 유지 */
+    @media (max-width: 1200px){
+        .main-block{ margin-right: 0; }               /* 본문 우측 여백 해제 */
+        section[data-testid="stSidebar"]{
+            position: static !important;
+            width: auto;
+            height: auto;
+            border-left: none;
+            background: #FAE8D9;
+        }
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -176,7 +207,7 @@ if os.path.exists(INFO_PATH):
     except Exception:
         pass
 
-# -------------------- 사이드바: 부고 정보 입력 --------------------
+# -------------------- 사이드바: 부고 정보 입력 (기능 유지) --------------------
 st.sidebar.title("📜 부고 정보 입력")
 pet_name = st.sidebar.text_input("반려동물 이름", value=default_name, key="pet_name_input_sidebar")
 birth_date = st.sidebar.date_input("태어난 날", value=default_birth, format="YYYY-MM-DD", key="birth_date_input_sidebar")
@@ -413,5 +444,3 @@ with tab3:
 
 # -------------------- 본문 종료 --------------------
 st.markdown('</div>', unsafe_allow_html=True)
-
-
