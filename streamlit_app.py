@@ -73,7 +73,7 @@ st.markdown("""
         background:#fff; border:1px solid var(--line);
         box-shadow:0 2px 8px rgba(79,56,50,.05); color:#5A3E36;
     }
-    .badge .dot{ width:8px; height:8px; border-radius:50%; background:var(--accent);
+    .badge .dot{ width:8px; height:8px; border-radius:50%; background: var(--accent);
         box-shadow:0 0 0 3px rgba(207,161,141,.18) inset; }
 
     .hero-visual{ display:flex; align-items:center; justify-content:center; }
@@ -300,50 +300,48 @@ with tab1:
         else:
             st.warning("이름과 메시지를 입력해주세요.")
 
-    # --- 방명록 모음 ---
-st.subheader("📖 추모 메시지 모음")
-try:
-    with open("guestbook.txt", "r", encoding="utf-8") as f:
-        lines = [ln for ln in f.readlines() if ln.strip()]
-except FileNotFoundError:
-    lines = []
+    # --- 방명록 모음 (삭제 기능 포함) ---
+    st.subheader("📖 추모 메시지 모음")
+    try:
+        with open("guestbook.txt", "r", encoding="utf-8") as f:
+            lines = [ln for ln in f.readlines() if ln.strip()]
+    except FileNotFoundError:
+        lines = []
 
-if not lines:
-    st.info("아직 등록된 메시지가 없습니다.")
-else:
-    for idx, line in enumerate(reversed(lines)):
-        try:
-            time_str, user, msg = line.strip().split("|", 2)
-        except ValueError:
-            continue
+    if not lines:
+        st.info("아직 등록된 메시지가 없습니다.")
+    else:
+        for idx, line in enumerate(reversed(lines)):
+            try:
+                time_str, user, msg = line.strip().split("|", 2)
+            except ValueError:
+                continue
 
-        col_msg, col_btn = st.columns([6,1])
-        with col_msg:
-            st.markdown(
-                f"""
-                <div class="guest-card">
-                    <div class="guest-card-header">
-                        <div class="guest-avatar">{html.escape(initials_from_name(user))}</div>
-                        <div class="guest-name-time">
-                            <span class="guest-name">🕊️ {html.escape(user)}</span>
-                            <span class="guest-time">{html.escape(time_str)}</span>
+            col_msg, col_btn = st.columns([6,1])
+            with col_msg:
+                st.markdown(
+                    f"""
+                    <div class="guest-card">
+                        <div class="guest-card-header">
+                            <div class="guest-avatar">{html.escape(initials_from_name(user))}</div>
+                            <div class="guest-name-time">
+                                <span class="guest-name">🕊️ {html.escape(user)}</span>
+                                <span class="guest-time">{html.escape(time_str)}</span>
+                            </div>
                         </div>
+                        <div class="guest-msg">{html.escape(msg)}</div>
                     </div>
-                    <div class="guest-msg">{html.escape(msg)}</div>
-                </div>
-                """, unsafe_allow_html=True
-            )
-        with col_btn:
-            if st.button("삭제", key=f"delete_msg_{idx}"):
-                # 원본 lines는 최신순 정렬 전, reversed() 했으니 실제 index 계산 필요
-                real_idx = len(lines) - 1 - idx
-                del lines[real_idx]
-                with open("guestbook.txt", "w", encoding="utf-8") as f:
-                    f.writelines(lines)
-                st.rerun()
+                    """, unsafe_allow_html=True
+                )
+            with col_btn:
+                if st.button("삭제", key=f"delete_msg_{idx}"):
+                    real_idx = len(lines) - 1 - idx  # reversed에서 실제 인덱스로 환산
+                    del lines[real_idx]
+                    with open("guestbook.txt", "w", encoding="utf-8") as f:
+                        f.writelines(lines)
+                    st.rerun()
 
-
-    # --- 온라인 추모관 ---
+    # --- 온라인 추모관 (사진 업로드/삭제) ---
     st.subheader("🖼️ 온라인 추모관")
     with st.form("gallery_upload", clear_on_submit=True):
         uploaded_files = st.file_uploader("사진 업로드", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
@@ -354,6 +352,7 @@ else:
         for uploaded_file in uploaded_files:
             data = uploaded_file.getvalue()
             digest = file_sha256(data)[:16]
+            # 중복 방지: 동일 파일 해시가 이미 존재하면 스킵
             if any(f.startswith(digest + "_") for f in os.listdir(UPLOAD_FOLDER)):
                 dup += 1
                 continue
