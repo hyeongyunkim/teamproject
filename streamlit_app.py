@@ -176,7 +176,7 @@ st.markdown(
       <div class="hero-grid">
         <!-- 왼쪽: 로고 + 카피 + 뱃지 -->
         <div>
-          <div class="hero-logo">🐾 Pet Memorilization 🐾</div>
+          <div class="hero-logo">🐾 Pet Memorialization 🐾</div>
           <div class="tagline">소중한 반려동물을 추모하는 공간</div>
           <div class="badges">
             <span class="badge"><span class="dot"></span> 사진 {photo_count}장</span>
