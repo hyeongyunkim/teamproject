@@ -137,8 +137,8 @@ st.markdown('<div class="main-block">', unsafe_allow_html=True)
 UPLOAD_FOLDER = "uploaded_images"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# 히어로(오른쪽 상단)에서 사용할 기본 이미지
 BASE_IMG_URL = "https://github.com/hyeongyunkim/teamproject/raw/main/petfuneral.png"
+INFO_PATH = "memorial_info.json"
 
 def list_uploaded_images():
     return sorted([
@@ -160,6 +160,40 @@ def img_file_to_data_uri(path: str) -> str:
     with open(path, "rb") as f:
         b64 = base64.b64encode(f.read()).decode("utf-8")
     return f"data:{mime};base64,{b64}"
+
+# -------------------- 부고 기본/로드 --------------------
+default_name = "초코"
+default_birth = datetime(2015, 3, 15).date()
+default_pass  = datetime(2024, 8, 10).date()
+
+if os.path.exists(INFO_PATH):
+    try:
+        with open(INFO_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            default_name = data.get("name", default_name)
+            if data.get("birth"): default_birth = datetime.strptime(data["birth"], "%Y-%m-%d").date()
+            if data.get("pass"):  default_pass  = datetime.strptime(data["pass"],  "%Y-%m-%d").date()
+    except Exception:
+        pass
+
+# -------------------- 사이드바: 부고 정보 입력 --------------------
+st.sidebar.title("📜 부고 정보 입력")
+pet_name = st.sidebar.text_input("반려동물 이름", value=default_name, key="pet_name_input_sidebar")
+birth_date = st.sidebar.date_input("태어난 날", value=default_birth, format="YYYY-MM-DD", key="birth_date_input_sidebar")
+pass_date = st.sidebar.date_input("무지개다리 건넌 날", value=default_pass, format="YYYY-MM-DD", key="pass_date_input_sidebar")
+
+if st.sidebar.button("저장하기"):
+    try:
+        with open(INFO_PATH, "w", encoding="utf-8") as f:
+            json.dump({
+                "name": (pet_name or "").strip() or default_name,
+                "birth": birth_date.isoformat(),
+                "pass":  pass_date.isoformat()
+            }, f, ensure_ascii=False, indent=2)
+        st.sidebar.success("저장 완료!")
+        st.rerun()
+    except Exception as e:
+        st.sidebar.error(f"저장 중 오류: {e}")
 
 # -------------------- 히어로 영역 --------------------
 try:
@@ -237,55 +271,8 @@ with tab1:
             if st.button("▶", key="carousel_next"):
                 st.session_state.carousel_idx = (st.session_state.carousel_idx + 1) % n
 
-    # --- 부고장 (입력 + 표시) ---
+    # --- 부고장 표시 (사이드바 입력값 사용) ---
     st.subheader("📜 부고장")
-
-    INFO_PATH = "memorial_info.json"
-
-    # 기본값
-    default_name = "초코"
-    default_birth = datetime(2015, 3, 15).date()
-    default_pass  = datetime(2024, 8, 10).date()
-
-    # 저장된 값 불러오기
-    if os.path.exists(INFO_PATH):
-        try:
-            with open(INFO_PATH, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                default_name = data.get("name", default_name)
-                if data.get("birth"):
-                    default_birth = datetime.strptime(data["birth"], "%Y-%m-%d").date()
-                if data.get("pass"):
-                    default_pass = datetime.strptime(data["pass"], "%Y-%m-%d").date()
-        except Exception:
-            pass
-
-    # 입력 UI
-    c1, c2, c3 = st.columns([2,1,1])
-    with c1:
-        pet_name = st.text_input("반려동물 이름", value=default_name, key="pet_name_input")
-    with c2:
-        birth_date = st.date_input("태어난 날", value=default_birth, format="YYYY-MM-DD", key="birth_date_input")
-    with c3:
-        pass_date = st.date_input("무지개다리 건넌 날", value=default_pass, format="YYYY-MM-DD", key="pass_date_input")
-
-    # 저장 버튼
-    save_col, _ = st.columns([1,3])
-    with save_col:
-        if st.button("부고 정보 저장"):
-            try:
-                with open(INFO_PATH, "w", encoding="utf-8") as f:
-                    json.dump({
-                        "name": (pet_name or "").strip() or default_name,
-                        "birth": birth_date.isoformat(),
-                        "pass":  pass_date.isoformat()
-                    }, f, ensure_ascii=False, indent=2)
-                st.success("부고 정보를 저장했어요.")
-                st.rerun()
-            except Exception as e:
-                st.error(f"저장 중 오류가 발생했어요: {e}")
-
-    # 표시
     safe_name = html.escape((pet_name or "").strip() or default_name)
     st.markdown(
         f"""
