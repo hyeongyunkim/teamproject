@@ -8,7 +8,7 @@ from datetime import datetime
 import html  # 메시지 안전 표시용 (특수문자 이스케이프)
 
 # -------------------- 페이지 기본 설정 --------------------
-st.set_page_config(page_title="반려견 추모관", page_icon="🐾", layout="wide")
+st.set_page_config(page_title="반려동물물 추모관", page_icon="🐾", layout="wide")
 
 # -------------------- 색감/스타일 --------------------
 st.markdown("""
@@ -191,7 +191,7 @@ st.markdown(
     <div class="hero">
       <div class="hero-grid">
         <div>
-          <div class="tagline">소중한 반려견을 추모하는 공간</div>
+          <div class="tagline">소중한 반려동물물을 추모하는 공간</div>
           <div class="badges">
             <span class="badge"><span class="dot"></span> 사진 {photo_count}장</span>
             <span class="badge"><span class="dot"></span> 방명록 {message_count}개</span>
@@ -272,7 +272,7 @@ with tab1:
     st.markdown(
         """
         <div style="text-align:center; background-color:#FAE8D9; padding:15px; border-radius:15px; margin:10px;">
-        사랑하는 반려견 <b>초코</b> 이(가) 무지개다리를 건넜습니다.<br>
+        사랑하는 <b>초코</b> 이(가) 무지개다리를 건넜습니다.<br>
         함께한 시간들을 기억하며 따뜻한 마음으로 추모해주세요.
         <br><br>
         🐾 <b>태어난 날:</b> 2015-03-15 <br>
