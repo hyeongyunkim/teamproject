@@ -301,20 +301,24 @@ with tab1:
             st.warning("이름과 메시지를 입력해주세요.")
 
     # --- 방명록 모음 ---
-    st.subheader("📖 추모 메시지 모음")
-    try:
-        with open("guestbook.txt", "r", encoding="utf-8") as f:
-            lines = [ln for ln in f.readlines() if ln.strip()]
-    except FileNotFoundError:
-        lines = []
-    if not lines:
-        st.info("아직 등록된 메시지가 없습니다.")
-    else:
-        for line in reversed(lines):
-            try:
-                time_str, user, msg = line.strip().split("|", 2)
-            except ValueError:
-                continue
+st.subheader("📖 추모 메시지 모음")
+try:
+    with open("guestbook.txt", "r", encoding="utf-8") as f:
+        lines = [ln for ln in f.readlines() if ln.strip()]
+except FileNotFoundError:
+    lines = []
+
+if not lines:
+    st.info("아직 등록된 메시지가 없습니다.")
+else:
+    for idx, line in enumerate(reversed(lines)):
+        try:
+            time_str, user, msg = line.strip().split("|", 2)
+        except ValueError:
+            continue
+
+        col_msg, col_btn = st.columns([6,1])
+        with col_msg:
             st.markdown(
                 f"""
                 <div class="guest-card">
@@ -329,6 +333,15 @@ with tab1:
                 </div>
                 """, unsafe_allow_html=True
             )
+        with col_btn:
+            if st.button("삭제", key=f"delete_msg_{idx}"):
+                # 원본 lines는 최신순 정렬 전, reversed() 했으니 실제 index 계산 필요
+                real_idx = len(lines) - 1 - idx
+                del lines[real_idx]
+                with open("guestbook.txt", "w", encoding="utf-8") as f:
+                    f.writelines(lines)
+                st.rerun()
+
 
     # --- 온라인 추모관 ---
     st.subheader("🖼️ 온라인 추모관")
