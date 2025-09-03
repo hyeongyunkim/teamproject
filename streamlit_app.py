@@ -5,6 +5,7 @@ import base64
 import mimetypes
 from datetime import datetime
 import html  # 메시지 안전 표시용 (특수문자 이스케이프)
+import json  # 부고 정보 저장/로드
 
 # -------------------- 페이지 기본 설정 --------------------
 st.set_page_config(page_title="반려동물 추모관", page_icon="🐾", layout="wide")
@@ -236,17 +237,65 @@ with tab1:
             if st.button("▶", key="carousel_next"):
                 st.session_state.carousel_idx = (st.session_state.carousel_idx + 1) % n
 
-    # --- 부고장 ---
+    # --- 부고장 (입력 + 표시) ---
     st.subheader("📜 부고장")
+
+    INFO_PATH = "memorial_info.json"
+
+    # 기본값
+    default_name = "초코"
+    default_birth = datetime(2015, 3, 15).date()
+    default_pass  = datetime(2024, 8, 10).date()
+
+    # 저장된 값 불러오기
+    if os.path.exists(INFO_PATH):
+        try:
+            with open(INFO_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                default_name = data.get("name", default_name)
+                if data.get("birth"):
+                    default_birth = datetime.strptime(data["birth"], "%Y-%m-%d").date()
+                if data.get("pass"):
+                    default_pass = datetime.strptime(data["pass"], "%Y-%m-%d").date()
+        except Exception:
+            pass
+
+    # 입력 UI
+    c1, c2, c3 = st.columns([2,1,1])
+    with c1:
+        pet_name = st.text_input("반려동물 이름", value=default_name, key="pet_name_input")
+    with c2:
+        birth_date = st.date_input("태어난 날", value=default_birth, format="YYYY-MM-DD", key="birth_date_input")
+    with c3:
+        pass_date = st.date_input("무지개다리 건넌 날", value=default_pass, format="YYYY-MM-DD", key="pass_date_input")
+
+    # 저장 버튼
+    save_col, _ = st.columns([1,3])
+    with save_col:
+        if st.button("부고 정보 저장"):
+            try:
+                with open(INFO_PATH, "w", encoding="utf-8") as f:
+                    json.dump({
+                        "name": (pet_name or "").strip() or default_name,
+                        "birth": birth_date.isoformat(),
+                        "pass":  pass_date.isoformat()
+                    }, f, ensure_ascii=False, indent=2)
+                st.success("부고 정보를 저장했어요.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"저장 중 오류가 발생했어요: {e}")
+
+    # 표시
+    safe_name = html.escape((pet_name or "").strip() or default_name)
     st.markdown(
-        """
+        f"""
         <div style="text-align:center; background-color:#FAE8D9; padding:15px;
                     border-radius:15px; margin:10px;">
-        사랑하는 <b>초코</b> 이(가) 무지개다리를 건넜습니다.<br>
+        사랑하는 <b>{safe_name}</b> 이(가) 무지개다리를 건넜습니다.<br>
         함께한 시간들을 기억하며 따뜻한 마음으로 추모해주세요.
         <br><br>
-        🐾 <b>태어난 날:</b> 2015-03-15 <br>
-        🌈 <b>무지개다리 건넌 날:</b> 2024-08-10
+        🐾 <b>태어난 날:</b> {birth_date.isoformat()} <br>
+        🌈 <b>무지개다리 건넌 날:</b> {pass_date.isoformat()}
         </div>
         """, unsafe_allow_html=True
     )
@@ -308,8 +357,8 @@ with tab1:
             if any(f.startswith(digest + "_") for f in os.listdir(UPLOAD_FOLDER)):
                 dup += 1
                 continue
-            safe_name = "".join(c for c in uploaded_file.name if c not in "\\/:*?\"<>|")
-            filename = f"{digest}_{safe_name}"
+            safe_name_file = "".join(c for c in uploaded_file.name if c not in "\\/:*?\"<>|")
+            filename = f"{digest}_{safe_name_file}"
             with open(os.path.join(UPLOAD_FOLDER, filename), "wb") as f:
                 f.write(data)
             saved += 1
@@ -365,5 +414,3 @@ with tab3:
 
 # -------------------- 본문 종료 --------------------
 st.markdown('</div>', unsafe_allow_html=True)
-
-
