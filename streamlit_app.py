@@ -236,20 +236,21 @@ with tab1:
             if st.button("▶", key="carousel_next"):
                 st.session_state.carousel_idx = (st.session_state.carousel_idx + 1) % n
 
-    # --- 부고장 ---
-    st.subheader("📜 부고장")
-    st.markdown(
-        """
-        <div style="text-align:center; background-color:#FAE8D9; padding:15px;
-                    border-radius:15px; margin:10px;">
-        사랑하는 <b>초코</b> 이(가) 무지개다리를 건넜습니다.<br>
-        함께한 시간들을 기억하며 따뜻한 마음으로 추모해주세요.
-        <br><br>
-        🐾 <b>태어난 날:</b> 2015-03-15 <br>
-        🌈 <b>무지개다리 건넌 날:</b> 2024-08-10
-        </div>
-        """, unsafe_allow_html=True
-    )
+   # --- 부고장 ---
+st.subheader("📜 부고장")
+st.markdown(
+    """
+    <div style="text-align:center; background-color:#FAE8D9; padding:15px;
+                border-radius:15px; margin:10px;">
+    사랑하는 <b>초코</b> 이(가) 무지개다리를 건넜습니다.<br>
+    함께한 시간들을 기억하며 따뜻한 마음으로 추모해주세요.
+    <br><br>
+    🐾 <b>태어난 날:</b> 2015-03-15 <br>
+    🌈 <b>무지개다리 건넌 날:</b> 2024-08-10
+    </div>
+    """, unsafe_allow_html=True
+)
+
 
     # --- 방명록 작성 ---
     st.subheader("✍️ 방명록")
