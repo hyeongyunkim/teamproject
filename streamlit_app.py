@@ -6,9 +6,7 @@ import mimetypes
 from datetime import datetime
 import html
 import json
-os.environ["OPENAI_API_KEY"] = "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"
 
-# =============== 페이지/경로 설정 ===============
 st.set_page_config(page_title="반려동물 추모관", page_icon="🐾", layout="wide")
 
 UPLOAD_FOLDER = "uploaded_images"
