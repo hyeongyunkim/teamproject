@@ -200,6 +200,55 @@ if st.sidebar.button("저장하기"):
     except Exception as e:
         st.sidebar.error(f"저장 중 오류: {e}")
 
+# -------------------- (NEW) 생성형 AI 유틸 --------------------
+# 키 없어도 안전하게 동작하는 래퍼
+try:
+    from openai import OpenAI
+    _ai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+except Exception:
+    _ai_client = None
+
+def ai_generate(system_prompt: str, user_prompt: str, fallback: str, temperature: float = 0.7) -> str:
+    if _ai_client:
+        try:
+            resp = _ai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                temperature=temperature,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+            )
+            return resp.choices[0].message.content.strip()
+        except Exception:
+            pass
+    return fallback
+
+def ai_translate_ko_en(text: str) -> str:
+    if not text.strip():
+        return ""
+    if _ai_client:
+        try:
+            resp = _ai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                temperature=0.2,
+                messages=[
+                    {"role": "system", "content": "Translate the following Korean text into natural, respectful English."},
+                    {"role": "user", "content": text},
+                ],
+            )
+            return resp.choices[0].message.content.strip()
+        except Exception:
+            pass
+    return f"(EN) {text}"
+
+def make_obituary_fallback(name: str, birth: str, passed: str, traits: str, memories: str, tone: str) -> str:
+    tone_txt = {"따뜻하게":"따뜻하고 진심 어린", "격식 있게":"차분하고 공손한", "짧고 간결하게":"짧고 담백한"}.get(tone, "따뜻하고 진심 어린")
+    return (f"{tone_txt} 마음으로 {name}를(을) 기억합니다. "
+            f"{birth}에 태어나 우리와 함께했던 시간은 잊지 못할 선물이었습니다. "
+            f"{passed} 무지개다리를 건넜지만, {traits or '따뜻한 눈빛과 작은 습관들'} 그리고 "
+            f"{memories or '함께한 소중한 추억들'}은 오래도록 남아 우리를 위로할 것입니다.")
+
 # -------------------- 히어로 영역 --------------------
 try:
     with open("guestbook.txt", "r", encoding="utf-8") as f:
@@ -245,6 +294,47 @@ with tab1:
     st.markdown('<div class="page-wrap">', unsafe_allow_html=True)
     st.markdown("<h2 style='text-align:center;'>In Loving Memory</h2>", unsafe_allow_html=True)
 
+    # --- (NEW) AI 부고장 도우미 ---
+    st.markdown("### 🪄 AI 부고장 도우미")
+    tone = st.selectbox("문체/톤 선택", ["따뜻하게", "격식 있게", "짧고 간결하게"], index=0)
+    traits_in = st.text_input("성격/특징 (예: 온순함, 사람을 좋아함)")
+    memories_in = st.text_area("함께한 기억 (예: 첫 산책, 좋아하던 장난감 등)", height=80)
+
+    col_ai1, col_ai2, col_ai3 = st.columns([1,1,1])
+    ai_text_key = "ai_obituary_text"
+    if ai_text_key not in st.session_state:
+        st.session_state[ai_text_key] = ""
+
+    with col_ai1:
+        if st.button("부고장 문구 생성"):
+            sys = "You write warm, respectful memorial notes for pets in polite Korean. Avoid religious expressions by default."
+            usr = (f"반려동물 부고 문구를 220~350자로 만들어줘. "
+                   f"이름:{(pet_name or '').strip() or default_name}, "
+                   f"태어난 날:{birth_date.isoformat()}, "
+                   f"무지개다리 건넌 날:{pass_date.isoformat()}, "
+                   f"성격/특징:{traits_in or '정보 없음'}, "
+                   f"기억:{memories_in or '정보 없음'}, "
+                   f"톤:{tone} (존댓말)")
+            st.session_state[ai_text_key] = ai_generate(
+                sys, usr,
+                make_obituary_fallback(
+                    (pet_name or '').strip() or default_name,
+                    birth_date.isoformat(),
+                    pass_date.isoformat(),
+                    traits_in, memories_in, tone
+                )
+            )
+
+    with col_ai2:
+        if st.button("영어 번역"):
+            st.session_state[ai_text_key] = ai_translate_ko_en(st.session_state.get(ai_text_key, "")) or st.session_state.get(ai_text_key, "")
+
+    with col_ai3:
+        if st.button("초기화"):
+            st.session_state[ai_text_key] = ""
+
+    st.text_area("미리보기", st.session_state.get(ai_text_key, ""), height=160, key="ai_obituary_preview")
+
     # --- 대표 이미지 캐러셀 (업로드한 사진만) ---
     img_list = [os.path.join(UPLOAD_FOLDER, f) for f in list_uploaded_images()]
     n = len(img_list)
@@ -277,26 +367,52 @@ with tab1:
             if st.button("▶", key="carousel_next"):
                 st.session_state.carousel_idx = (st.session_state.carousel_idx + 1) % n
 
-    # --- 부고장 표시 (사이드바 입력값 사용) ---
+    # --- 부고장 표시 (AI 문구가 있으면 우선 사용) ---
     st.subheader("📜 부고장")
-    safe_name = html.escape((pet_name or "").strip() or default_name)
+    ai_render_text = st.session_state.get("ai_obituary_text", "").strip()
+    if ai_render_text:
+        html_body = ai_render_text
+    else:
+        safe_name = html.escape((pet_name or "").strip() or default_name)
+        html_body = (
+            f"사랑하는 <b>{safe_name}</b> 이(가) 무지개다리를 건넜습니다.<br>"
+            "함께한 시간들을 기억하며 따뜻한 마음으로 추모해주세요.<br><br>"
+            f"🐾 <b>태어난 날:</b> {birth_date.isoformat()} <br>"
+            f"🌈 <b>무지개다리 건넌 날:</b> {pass_date.isoformat()}"
+        )
+
     st.markdown(
         f"""
         <div style="text-align:center; background-color:#FAE8D9; padding:15px;
-                    border-radius:15px; margin:10px;">
-        사랑하는 <b>{safe_name}</b> 이(가) 무지개다리를 건넜습니다.<br>
-        함께한 시간들을 기억하며 따뜻한 마음으로 추모해주세요.
-        <br><br>
-        🐾 <b>태어난 날:</b> {birth_date.isoformat()} <br>
-        🌈 <b>무지개다리 건넌 날:</b> {pass_date.isoformat()}
-        </div>
+                    border-radius:15px; margin:10px;">{html_body}</div>
         """, unsafe_allow_html=True
     )
+
+    # --- (NEW) 방명록 문구 도우미 ---
+    st.markdown("### 🤝 방명록 문구 도우미 (선택)")
+    rel = st.selectbox("관계", ["이웃", "친구", "가족", "동료"], index=0)
+    length = st.selectbox("길이", ["짧게", "보통", "길게"], index=0)
+    tone2 = st.selectbox("톤", ["따뜻하게", "격식 있게"], index=0)
+
+    def _suggest_len(v):
+        return {"짧게":"50~90자", "보통":"90~150자", "길게":"150~220자"}.get(v, "80~120자")
+
+    if st.button("AI가 방명록 문구 추천 넣기"):
+        sys = "You generate short condolence messages in polite Korean for a pet memorial guestbook."
+        usr = (f"관계:{rel}, 톤:{tone2}, 길이:{_suggest_len(length)}, "
+               f"반려동물 이름:{(pet_name or '').strip() or default_name}. "
+               f"짧은 진심 어린 위로문을 1개 생성.")
+        suggestion = ai_generate(
+            sys, usr,
+            f"{(pet_name or '').strip() or default_name}와 함께한 시간이 오래도록 위로가 되시길 바랍니다. "
+            f"마음이 조금씩 편안해지시길 진심으로 바랍니다."
+        )
+        st.session_state["message"] = suggestion
 
     # --- 방명록 작성 ---
     st.subheader("✍️ 방명록")
     name = st.text_input("이름")
-    message = st.text_area("메시지")
+    message = st.text_area("메시지", key="message")
     if st.button("추모 메시지 남기기"):
         if name and message:
             with open("guestbook.txt", "a", encoding="utf-8") as f:
@@ -341,7 +457,7 @@ with tab1:
                 )
             with col_btn:
                 if st.button("삭제", key=f"delete_msg_{idx}"):
-                    real_idx = len(lines) - 1 - idx  # reversed에서 실제 인덱스로 환산
+                    real_idx = len(lines) - 1 - idx
                     del lines[real_idx]
                     with open("guestbook.txt", "w", encoding="utf-8") as f:
                         f.writelines(lines)
@@ -358,7 +474,7 @@ with tab1:
         for uploaded_file in uploaded_files:
             data = uploaded_file.getvalue()
             digest = file_sha256(data)[:16]
-            # 중복 방지: 동일 파일 해시가 이미 존재하면 스킵
+            # 중복 방지
             if any(f.startswith(digest + "_") for f in os.listdir(UPLOAD_FOLDER)):
                 dup += 1
                 continue
