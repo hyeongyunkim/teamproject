@@ -1,3 +1,4 @@
+# app.py
 import streamlit as st
 import os
 import hashlib
@@ -7,6 +8,7 @@ from datetime import datetime
 import html
 import json
 
+# -------------------- 기본 설정 --------------------
 st.set_page_config(page_title="반려동물 추모관", page_icon="🐾", layout="wide")
 
 UPLOAD_FOLDER = "uploaded_images"
@@ -17,10 +19,8 @@ os.makedirs(CONVERTED_FOLDER, exist_ok=True)
 BASE_IMG_URL = "https://github.com/hyeongyunkim/teamproject/raw/main/petfuneral.png"
 INFO_PATH = "memorial_info.json"
 
-# =============== OpenAI SDK (최신 v1) 준비 ===============
-# 키는 st.secrets > OPENAI_API_KEY 또는 OS 환경변수에서 가져옵니다.
+# -------------------- OpenAI 설정 (선택) --------------------
 OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", ""))
-
 client = None
 openai_import_error = None
 if OPENAI_API_KEY:
@@ -54,7 +54,7 @@ def ai_convert_cute_memorial(img_path: str, out_path: str):
     with open(out_path, "wb") as out:
         out.write(img_bytes)
 
-# =============== 유틸 ===============
+# -------------------- 유틸 --------------------
 def list_all_images_for_carousel():
     files = []
     for folder in [UPLOAD_FOLDER, CONVERTED_FOLDER]:
@@ -87,16 +87,40 @@ def initials_from_name(name: str) -> str:
     name = name.strip()
     return "🕊️" if not name else name[0].upper()
 
-# =============== 스타일 ===============
+def safe_remove(path: str) -> bool:
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+            return True
+        return False
+    except Exception:
+        return False
+
+# -------------------- 스타일 --------------------
 st.markdown("""
 <style>
-:root{ --bg:#FDF6EC; --ink:#4B3832; --accent:#CFA18D; --accent-2:#FAE8D9; --line:#EED7CA; --shadow:0 10px 24px rgba(79,56,50,0.12); }
+:root{
+  --bg:#FDF6EC; --ink:#4B3832; --accent:#CFA18D; --accent-2:#FAE8D9; --line:#EED7CA;
+  --shadow:0 10px 24px rgba(79,56,50,0.12);
+}
 body { background-color: var(--bg); color: var(--ink); }
-.main-block { margin-top: 74px; }
-.topbar-fixed { position: fixed; top: 0; left: 0; right: 0; height: 60px; background:#FAE8D9; border-bottom:1px solid #EED7CA; display:flex; align-items:center; padding:0 24px; z-index:1000; }
-.topbar-fixed .brand { font-size:28px; font-weight:900; color:#4B3832; }
 .page-wrap{ max-width:1180px; margin:0 auto; }
-.hero{ background: linear-gradient(180deg, #FFF7F2 0%, #FFEFE6 100%); border:1px solid var(--line); border-radius:24px; box-shadow: var(--shadow); padding:28px 32px; }
+
+/* 상단 고정 바 */
+.topbar-fixed {
+  position: fixed; top: 0; left: 0; right: 0; height: 60px;
+  background:#FAE8D9; border-bottom:1px solid var(--line);
+  display:flex; align-items:center; padding:0 24px; z-index:1000;
+}
+.topbar-fixed .brand { font-size:28px; font-weight:900; color:#4B3832; }
+.main-block { margin-top: 74px; }
+
+/* 히어로 — 세로 길이 약 40% 축소 */
+.hero{
+  background: linear-gradient(180deg, #FFF7F2 0%, #FFEFE6 100%);
+  border:1px solid var(--line); border-radius:24px; box-shadow: var(--shadow);
+  padding:17px 32px;  /* ↓ 기존 28px에서 17px로 축소 */
+}
 .hero-grid{ display:grid; grid-template-columns: 1.6fr .9fr; gap:28px; align-items:center; }
 .hero-logo{ font-size:26px; font-weight:900; color:#4B3832; }
 .tagline{ font-size:18px; color:#6C5149; margin-bottom:14px; }
@@ -105,15 +129,23 @@ body { background-color: var(--bg); color: var(--ink); }
 .badge .dot{ width:8px; height:8px; border-radius:50%; background: var(--accent); }
 .photo-frame{ background:#fff; border:6px solid #F3E2D8; box-shadow: 0 8px 18px rgba(79,56,50,0.12); border-radius:16px; padding:10px; margin-bottom:12px; }
 .photo-frame .thumb{ width:70%; display:block; border-radius:10px; margin:0 auto; }
-.guest-card{ background: linear-gradient(180deg, #FFF8F1 0%, #FFFFFF 100%); border:1px solid var(--line); border-left:6px solid var(--accent); border-radius:14px; padding:14px 16px; margin:10px 0 16px; box-shadow:0 4px 10px rgba(79,56,50,0.08); }
+
+.guest-card{ background: linear-gradient(180deg, #FFF8F1 0%, #FFFFFF 100%); border:1px solid var(--line);
+  border-left:6px solid var(--accent); border-radius:14px; padding:14px 16px; margin:10px 0 16px; box-shadow:0 4px 10px rgba(79,56,50,0.08); }
+
+/* 탭 중앙 정렬 */
+.stTabs [role="tablist"]{
+  justify-content: center !important;
+  gap: 12px !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
 # 상단 고정 바
-st.markdown("""<div class="topbar-fixed"><div class="brand">🐾 Pet Memorilization 🐾</div></div>""", unsafe_allow_html=True)
+st.markdown("""<div class="topbar-fixed"><div class="brand">🐾 Pet Memorialization 🐾</div></div>""", unsafe_allow_html=True)
 st.markdown('<div class="main-block">', unsafe_allow_html=True)
 
-# =============== 부고 정보 로드 ===============
+# -------------------- 부고 정보 로드 --------------------
 default_name = "초코"
 default_birth = datetime(2015, 3, 15).date()
 default_pass  = datetime(2024, 8, 10).date()
@@ -143,7 +175,7 @@ if st.sidebar.button("저장하기"):
     st.sidebar.success("저장 완료!")
     st.rerun()
 
-# =============== 히어로 ===============
+# -------------------- 히어로 --------------------
 try:
     with open("guestbook.txt", "r", encoding="utf-8") as f:
         guest_lines = [ln for ln in f.readlines() if ln.strip()]
@@ -173,10 +205,10 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# =============== 탭 ===============
+# -------------------- 탭 (중앙정렬) --------------------
 tab1, tab2, tab3 = st.tabs(["📜 부고장/방명록/추모관", "📺 장례식 스트리밍", "💐 기부/꽃바구니"])
 
-# ------------------ 탭1 ------------------
+# ====== 탭1: 부고장/방명록/추모관 ======
 with tab1:
     st.markdown("<h2 style='text-align:center;'>In Loving Memory</h2>", unsafe_allow_html=True)
 
@@ -261,7 +293,7 @@ with tab1:
     else:
         st.info("아직 등록된 메시지가 없습니다.")
 
-    # 온라인 추모관 (업로드)
+    # 온라인 추모관 — 업로드
     st.subheader("🖼️ 온라인 추모관")
     with st.form("gallery_upload", clear_on_submit=True):
         uploaded_files = st.file_uploader("사진 업로드", type=["png","jpg","jpeg"], accept_multiple_files=True)
@@ -283,34 +315,47 @@ with tab1:
         if dup: st.info(f"중복으로 제외된 사진: {dup}장")
         st.rerun()
 
-    # 온라인 추모관 (목록 + AI 변환)
+    # 온라인 추모관 — 목록(삭제/AI변환)
     originals = list_uploaded_only()
     if originals:
         for idx, img_file in enumerate(originals):
             img_path = os.path.join(UPLOAD_FOLDER, img_file)
-            cols = st.columns([2,1])
-            with cols[0]:
+            col_img, col_actions = st.columns([2,1])
+            with col_img:
                 st.image(img_path, caption=f"원본: {img_file}", use_container_width=True)
-            with cols[1]:
+            with col_actions:
+                # AI 변환
                 if ai_available():
                     if st.button("AI 변환(귀여운 추모 사진)", key=f"convert_{idx}"):
                         try:
                             out_path = os.path.join(CONVERTED_FOLDER, f"converted_{img_file}")
                             ai_convert_cute_memorial(img_path, out_path)
-                            st.success("변환 완료! 캐러셀(부고장 위)에서도 볼 수 있습니다.")
+                            st.success("변환 완료! 캐러셀에서도 볼 수 있어요.")
                             st.rerun()
                         except Exception as e:
                             st.error(f"변환 실패: {e}")
                 else:
-                    st.caption("AI 변환을 사용하려면 아래를 설정하세요:")
+                    st.caption("AI 변환을 사용하려면:")
                     if not OPENAI_API_KEY:
-                        st.code("Secrets 또는 환경변수에 OPENAI_API_KEY 등록", language="bash")
+                        st.code("Secrets/환경변수에 OPENAI_API_KEY 등록", language="bash")
                     if openai_import_error:
                         st.code("requirements.txt에 openai>=1.0.0 추가 후 재배포", language="bash")
+
+                # 삭제 기능
+                if st.button("사진 삭제", key=f"delete_{idx}"):
+                    ok1 = safe_remove(img_path)
+                    # 해당 원본으로부터 만든 변환본(delete opt.)
+                    conv_candidate = os.path.join(CONVERTED_FOLDER, f"converted_{img_file}")
+                    ok2 = safe_remove(conv_candidate)
+                    if ok1 or ok2:
+                        st.success("사진이 삭제되었습니다.")
+                    else:
+                        st.warning("삭제할 파일을 찾지 못했어요.")
+                    st.rerun()
     else:
         st.info("아직 업로드된 사진이 없습니다.")
 
-# ------------------ 탭2 ------------------
+# ====== 탭2: 스트리밍 ======
 with tab2:
     st.markdown('<div class="page-wrap">', unsafe_allow_html=True)
     st.header("📺 장례식 실시간 스트리밍")
@@ -320,7 +365,7 @@ with tab2:
         unsafe_allow_html=True
     )
 
-# ------------------ 탭3 ------------------
+# ====== 탭3: 기부/꽃바구니 ======
 with tab3:
     st.markdown('<div class="page-wrap">', unsafe_allow_html=True)
     st.header("💐 조문객 기부 / 꽃바구니 주문")
