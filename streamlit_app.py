@@ -30,8 +30,7 @@ st.markdown("""
     .topbar-fixed .brand {
         display: flex; align-items: center; gap: 10px;
         font-size: 28px; font-weight: 900; color: #4B3832;
-        letter-spacing: -0.3px;
-        line-height:1;
+        letter-spacing: -0.3px; line-height:1;
     }
 
     /* 본문 여백 */
@@ -57,15 +56,12 @@ st.markdown("""
         background: radial-gradient(1200px 600px at 10% -20%, #FFEDE2 0%, rgba(255,237,226,0) 60%),
                     linear-gradient(180deg, #FFF7F2 0%, #FFEFE6 100%);
         border:1px solid var(--line); border-radius:24px;
-        box-shadow: var(--shadow); padding:28px 32px;
-        overflow:hidden;
+        box-shadow: var(--shadow); padding:28px 32px; overflow:hidden;
     }
     .hero-grid{
         display:grid; grid-template-columns: 1.6fr .9fr; gap:28px; align-items:center;
     }
-    .hero-logo{
-        font-size:26px; font-weight:900; color:#4B3832; margin-bottom:8px;
-    }
+    .hero-logo{ font-size:26px; font-weight:900; color:#4B3832; margin-bottom:8px; }
     .tagline{ font-size:18px; color:#6C5149; margin-bottom:14px; }
     .badges{ display:flex; gap:10px; flex-wrap:wrap; }
     .badge{
@@ -96,8 +92,8 @@ st.markdown("""
     .guest-card-header{ display:flex; align-items:center; gap:10px; margin-bottom: 8px; }
     .guest-avatar{
         width:34px; height:34px; min-width:34px; border-radius:50%;
-        background:#F0D9CF; color:#4B3832;
-        display:flex; align-items:center; justify-content:center; font-weight:700;
+        background:#F0D9CF; color:#4B3832; display:flex; align-items:center;
+        justify-content:center; font-weight:700;
     }
     .guest-name-time{ display:flex; flex-direction:column; line-height:1.2; }
     .guest-name{ font-weight:700; }
@@ -115,14 +111,12 @@ st.markdown("""
     }
     button[aria-selected="true"][role="tab"]{
         background: var(--accent) !important; color:#fff !important;
-        border-color: var(--accent) !important;
-        box-shadow: 0 2px 6px rgba(207,161,141,.35);
+        border-color: var(--accent) !important; box-shadow: 0 2px 6px rgba(207,161,141,.35);
     }
 
     /* ---------- 캐러셀/갤러리 ---------- */
     .photo-frame{
-        background:#fff; border: 6px solid #F3E2D8;
-        box-shadow: 0 8px 18px rgba(79,56,50,0.12);
+        background:#fff; border: 6px solid #F3E2D8; box-shadow: 0 8px 18px rgba(79,56,50,0.12);
         border-radius:16px; padding:10px; margin-bottom:12px;
     }
     .photo-frame .thumb{
@@ -347,7 +341,7 @@ with tab1:
                 )
             with col_btn:
                 if st.button("삭제", key=f"delete_msg_{idx}"):
-                    real_idx = len(lines) - 1 - idx
+                    real_idx = len(lines) - 1 - idx  # reversed에서 실제 인덱스로 환산
                     del lines[real_idx]
                     with open("guestbook.txt", "w", encoding="utf-8") as f:
                         f.writelines(lines)
@@ -364,6 +358,7 @@ with tab1:
         for uploaded_file in uploaded_files:
             data = uploaded_file.getvalue()
             digest = file_sha256(data)[:16]
+            # 중복 방지: 동일 파일 해시가 이미 존재하면 스킵
             if any(f.startswith(digest + "_") for f in os.listdir(UPLOAD_FOLDER)):
                 dup += 1
                 continue
@@ -371,3 +366,58 @@ with tab1:
             filename = f"{digest}_{safe_name_file}"
             with open(os.path.join(UPLOAD_FOLDER, filename), "wb") as f:
                 f.write(data)
+            saved += 1
+        if saved:
+            st.success(f"{saved}장 업로드 완료!")
+        if dup:
+            st.info(f"중복으로 제외된 사진: {dup}장")
+        st.rerun()
+
+    image_files = list_uploaded_images()
+    if image_files:
+        cols = st.columns(3)
+        for idx, img_file in enumerate(image_files):
+            img_path = os.path.join(UPLOAD_FOLDER, img_file)
+            with cols[idx % 3]:
+                data_uri = img_file_to_data_uri(img_path)
+                st.markdown(
+                    f"""
+                    <div class="photo-frame">
+                        <img class="thumb" src="{data_uri}" alt="memorial photo">
+                    </div>
+                    """, unsafe_allow_html=True
+                )
+                if st.button("삭제", key=f"delete_img_{idx}"):
+                    os.remove(img_path)
+                    st.rerun()
+    else:
+        st.info("아직 업로드된 사진이 없습니다.")
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# ==================== ② 장례식 스트리밍 ====================
+with tab2:
+    st.markdown('<div class="page-wrap">', unsafe_allow_html=True)
+    st.header("📺 장례식 실시간 스트리밍")
+    video_url = st.text_input("YouTube 영상 URL 입력", "https://www.youtube.com/embed/dQw4w9WgXcQ")
+    st.markdown(
+        f"<div style='text-align:center;'><iframe width='560' height='315' src='{video_url}' frameborder='0' allowfullscreen></iframe></div>",
+        unsafe_allow_html=True
+    )
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# ==================== ③ 기부/꽃바구니 ====================
+with tab3:
+    st.markdown('<div class="page-wrap">', unsafe_allow_html=True)
+    st.header("💐 조문객 기부 / 꽃바구니 주문")
+    st.markdown("- 💳 기부: 카카오페이 / 토스 / 계좌이체 가능\n- 🌹 꽃바구니 주문: 온라인 꽃집 링크 연결")
+    link = st.text_input("꽃바구니 주문 링크", "https://www.naver.com")
+    st.markdown(
+        f"<div style='text-align:center;'><a href='{link}' target='_blank' "
+        f"style='font-size:18px; color:#CFA18D; font-weight:bold;'>👉 꽃바구니 주문하러 가기</a></div>",
+        unsafe_allow_html=True
+    )
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# -------------------- 본문 종료 --------------------
+st.markdown('</div>', unsafe_allow_html=True)
