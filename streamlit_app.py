@@ -1,3 +1,4 @@
+from openai import OpenAI
 import streamlit as st
 import os
 import hashlib
@@ -6,6 +7,8 @@ import mimetypes
 from datetime import datetime
 import html
 import json
+OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", ""))
+client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
 st.set_page_config(page_title="반려동물 추모관", page_icon="🐾", layout="wide")
 
