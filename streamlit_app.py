@@ -6,6 +6,7 @@ import mimetypes
 from datetime import datetime
 import html
 import json
+os.environ["OPENAI_API_KEY"] = ""
 
 # =============== 페이지/경로 설정 ===============
 st.set_page_config(page_title="반려동물 추모관", page_icon="🐾", layout="wide")
