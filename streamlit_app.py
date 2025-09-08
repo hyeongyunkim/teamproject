@@ -10,7 +10,7 @@ from openai import OpenAI
 
 # -------------------- 기본 설정 --------------------
 st.set_page_config(page_title="반려동물 추모관", page_icon="🐾", layout="wide")
-client = OpenAI(api_key=os.getenv("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"))
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # -------------------- 경로 --------------------
 UPLOAD_FOLDER = "uploaded_images"
