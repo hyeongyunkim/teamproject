@@ -370,4 +370,4 @@ with tab1:
             safe_name_file = "".join(c for c in uploaded_file.name if c not in "\\/:*?\"<>|")
             filename = f"{digest}_{safe_name_file}"
             with open(os.path.join(UPLOAD_FOLDER, filename), "wb") as f:
-                f.write(data
+                f.write(data)
