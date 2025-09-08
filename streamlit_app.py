@@ -33,10 +33,7 @@ def ai_available() -> bool:
     return client is not None
 
 def ai_convert_cute_memorial(img_path: str, out_path: str):
-    """
-    원본 이미지를 '귀여운 추모 사진 느낌'으로 변환하여 out_path에 저장.
-    OpenAI 최신 SDK (images.edit) 사용.
-    """
+    """원본 이미지를 귀여운 추모 사진 느낌으로 변환"""
     prompt = (
         "귀여운 그림 느낌의 반려동물 추모 사진. "
         "따뜻하고 밝은 색감, 은은한 보케와 부드러운 비네팅, 엽서 같은 느낌."
@@ -114,7 +111,7 @@ body { background-color: var(--bg); color: var(--ink); }
 .topbar-fixed .brand { font-size:28px; font-weight:900; color:#4B3832; }
 .main-block { margin-top: 74px; }
 
-/* 히어로 — 세로 길이 약 40% 축소 */
+/* 히어로 — 세로 길이 축소 */
 .hero{
   background: linear-gradient(180deg, #FFF7F2 0%, #FFEFE6 100%);
   border:1px solid var(--line); border-radius:24px; box-shadow: var(--shadow);
@@ -126,6 +123,13 @@ body { background-color: var(--bg); color: var(--ink); }
 .badges{ display:flex; gap:10px; flex-wrap:wrap; }
 .badge{ padding:6px 10px; border-radius:999px; font-weight:700; font-size:13px; background:#fff; border:1px solid var(--line); box-shadow:0 2px 8px rgba(79,56,50,.05); color:#5A3E36; }
 .badge .dot{ width:8px; height:8px; border-radius:50%; background: var(--accent); }
+
+/* 상단 대표 이미지 크기 줄이기 (50%), 원래 위치 유지 */
+.hero-visual .kv img{
+  width:50%;
+  display:block;
+}
+
 .photo-frame{ background:#fff; border:6px solid #F3E2D8; box-shadow: 0 8px 18px rgba(79,56,50,0.12); border-radius:16px; padding:10px; margin-bottom:12px; }
 .photo-frame .thumb{ width:70%; display:block; border-radius:10px; margin:0 auto; }
 
@@ -138,10 +142,10 @@ body { background-color: var(--bg); color: var(--ink); }
   gap: 12px !important;
 }
 
-/* ── 온라인 추모관: 액자 그리드 ── */
+/* 온라인 추모관 액자 그리드 */
 .frame-card{
   background:#fff;
-  border:6px solid #F3E2D8;                  /* 바깥 프레임 */
+  border:6px solid #F3E2D8;
   border-radius:16px;
   box-shadow: 0 8px 18px rgba(79,56,50,0.12);
   padding:10px;
@@ -149,14 +153,14 @@ body { background-color: var(--bg); color: var(--ink); }
 }
 .frame-edge{
   background:#FFFFFF;
-  border:1px solid var(--line);               /* 얇은 선 */
+  border:1px solid var(--line);
   border-radius:12px;
-  padding:8px;                                 /* 매트(여백) */
+  padding:8px;
 }
 .square-thumb{
   width:100%;
-  aspect-ratio: 1 / 1;                         /* 정사각형 */
-  object-fit: cover;                            /* 중앙 crop */
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
   display:block;
   border-radius:10px;
 }
@@ -170,11 +174,11 @@ body { background-color: var(--bg); color: var(--ink); }
 </style>
 """, unsafe_allow_html=True)
 
-# 상단 고정 바
+# -------------------- 상단 고정 바 --------------------
 st.markdown("""<div class="topbar-fixed"><div class="brand">🐾 Pet Memorialization 🐾</div></div>""", unsafe_allow_html=True)
 st.markdown('<div class="main-block">', unsafe_allow_html=True)
 
-# -------------------- 부고 정보 로드 --------------------
+# -------------------- 부고 정보 --------------------
 default_name = "초코"
 default_birth = datetime(2015, 3, 15).date()
 default_pass  = datetime(2024, 8, 10).date()
@@ -233,7 +237,6 @@ st.markdown(f"""
   </div>
 </div>
 """, unsafe_allow_html=True)
-
 # -------------------- 탭 (중앙정렬) --------------------
 tab1, tab2, tab3 = st.tabs(["📜 부고장/방명록/추모관", "📺 장례식 스트리밍", "💐 기부/꽃바구니"])
 
@@ -242,6 +245,25 @@ with tab1:
     st.markdown("<h2 style='text-align:center;'>In Loving Memory</h2>", unsafe_allow_html=True)
 
     # 캐러셀: 업로드 + 변환 이미지 모두 표시
+    def list_all_images_for_carousel():
+        files = []
+        for folder in ["uploaded_images", "converted_images"]:
+            if os.path.exists(folder):
+                files += [
+                    os.path.join(folder, f)
+                    for f in os.listdir(folder)
+                    if f.lower().endswith((".png", ".jpg", ".jpeg"))
+                ]
+        return sorted(files)
+
+    def img_file_to_data_uri(path: str) -> str:
+        mime, _ = mimetypes.guess_type(path)
+        if mime is None:
+            mime = "image/jpeg"
+        with open(path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode("utf-8")
+        return f"data:{mime};base64,{b64}"
+
     img_list = list_all_images_for_carousel()
     n = len(img_list)
     if "carousel_idx" not in st.session_state:
@@ -290,8 +312,14 @@ with tab1:
         else:
             st.warning("이름과 메시지를 입력해주세요.")
 
-    # 방명록 모음
+    # 방명록 모음(온화 카드 톤 기본)
     st.subheader("📖 추모 메시지 모음")
+    try:
+        with open("guestbook.txt", "r", encoding="utf-8") as f:
+            guest_lines = [ln for ln in f.readlines() if ln.strip()]
+    except FileNotFoundError:
+        guest_lines = []
+
     if guest_lines:
         for idx, line in enumerate(reversed(guest_lines)):
             try:
@@ -300,16 +328,24 @@ with tab1:
                 continue
             col_msg, col_btn = st.columns([6,1])
             with col_msg:
+                safe_user = html.escape(user)
+                safe_time = html.escape(time_str)
+                safe_msg = html.escape(msg).replace("\n", "<br>")
                 st.markdown(f"""
                 <div class="guest-card">
-                    <div class="guest-card-header" style="display:flex; gap:10px; align-items:center;">
-                        <div class="guest-avatar">{html.escape(initials_from_name(user))}</div>
+                    <div class="guest-card-header" style="display:flex; gap:12px; align-items:center; margin-bottom:6px;">
+                        <div class="guest-avatar" style="width:36px;height:36px;border-radius:50%;
+                             display:flex;align-items:center;justify-content:center;background:#FAE8D9;
+                             color:#6C5149;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.05);">🕊️</div>
                         <div class="guest-name-time">
-                            <span class="guest-name">🕊️ {html.escape(user)}</span>
-                            <span class="guest-time">{html.escape(time_str)}</span>
+                            <span class="guest-name" style="color:#4B3832;font-weight:700;">{safe_user}</span>
+                            <span class="guest-time" style="color:#9B8F88;font-size:12px;margin-left:6px;">· {safe_time}</span>
                         </div>
                     </div>
-                    <div class="guest-msg">{html.escape(msg)}</div>
+                    <div class="guest-msg" style="margin-top:6px;padding:10px 12px;background:#FFF4ED;
+                         border:1px dashed #F0E0D7;border-radius:12px;color:#5A3E36;line-height:1.6;">
+                        {safe_msg}
+                    </div>
                 </div>
                 """, unsafe_allow_html=True)
             with col_btn:
@@ -331,7 +367,7 @@ with tab1:
         saved, dup = 0, 0
         for uploaded_file in uploaded_files:
             data = uploaded_file.getvalue()
-            digest = file_sha256(data)[:16]
+            digest = hashlib.sha256(data).hexdigest()[:16]
             if any(f.startswith(digest + "_") for f in os.listdir(UPLOAD_FOLDER)):
                 dup += 1
                 continue
@@ -345,6 +381,10 @@ with tab1:
         st.rerun()
 
     # 온라인 추모관 — 목록(3열 액자 그리드, 삭제/AI변환)
+    def list_uploaded_only():
+        return sorted([f for f in os.listdir(UPLOAD_FOLDER)
+                       if f.lower().endswith((".png",".jpg",".jpeg"))])
+
     originals = list_uploaded_only()
     if originals:
         for row_start in range(0, len(originals), 3):
@@ -367,9 +407,9 @@ with tab1:
                         unsafe_allow_html=True
                     )
                     # 액션 버튼
-                    btn_cols = st.columns([1,1])
-                    with btn_cols[0]:
-                        if ai_available():
+                    b1, b2 = st.columns(2)
+                    with b1:
+                        if client is not None:
                             if st.button("AI 변환", key=f"convert_{idx}"):
                                 try:
                                     out_path = os.path.join(CONVERTED_FOLDER, f"converted_{img_file}")
@@ -383,16 +423,17 @@ with tab1:
                                 st.caption("⚠️ OPENAI_API_KEY 필요")
                             elif openai_import_error:
                                 st.caption("⚠️ openai>=1.0.0 설치 필요")
-
-                    with btn_cols[1]:
+                    with b2:
                         if st.button("삭제", key=f"delete_{idx}"):
-                            ok1 = safe_remove(img_path)
+                            # 원본 삭제
+                            ok1 = os.path.exists(img_path) and not os.remove(img_path)
+                            # 대응 변환본 삭제(있다면)
                             conv_candidate = os.path.join(CONVERTED_FOLDER, f"converted_{img_file}")
-                            ok2 = safe_remove(conv_candidate)
-                            if ok1 or ok2:
-                                st.success("사진이 삭제되었습니다.")
-                            else:
-                                st.warning("삭제할 파일을 찾지 못했어요.")
+                            ok2 = False
+                            if os.path.exists(conv_candidate):
+                                os.remove(conv_candidate)
+                                ok2 = True
+                            st.success("사진이 삭제되었습니다." if (ok1 or ok2) else "삭제할 파일을 찾지 못했어요.")
                             st.rerun()
     else:
         st.info("아직 업로드된 사진이 없습니다.")
