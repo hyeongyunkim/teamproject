@@ -391,7 +391,7 @@ with tab1:
 with tab2:
     st.markdown('<div class="page-wrap">', unsafe_allow_html=True)
     st.header("📺 장례식 실시간 스트리밍")
-    video_url = st.text_input("YouTube 영상 URL 입력", "https://www.youtube.com/embed/dQw4w9WgXcQ")
+    video_url = st.text_input("YouTube 영상 URL 입력", Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster)
     st.markdown(
         f"<div style='text-align:center;'><iframe width='560' height='315' src='{video_url}' frameborder='0' allowfullscreen></iframe></div>",
         unsafe_allow_html=True
@@ -413,6 +413,8 @@ with tab3:
 
 # -------------------- 본문 종료 --------------------
 st.markdown('</div>', unsafe_allow_html=True)
+
+
 
 
 
