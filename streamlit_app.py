@@ -1,4 +1,3 @@
-# app.py
 import streamlit as st
 import os
 import hashlib
@@ -118,8 +117,10 @@ body { background-color: var(--bg); color: var(--ink); }
 /* 히어로 — 세로 길이 약 40% 축소 */
 .hero{
   background: linear-gradient(180deg, #FFF7F2 0%, #FFEFE6 100%);
-  border:1px solid var(--line); border-radius:24px; box-shadow: var(--shadow);
-  padding:17px 32px;  /* ↓ 기존 28px에서 17px로 축소 */
+  border:1px solid var(--line);
+  border-radius:24px;
+  box-shadow: var(--shadow);
+  padding:12px 32px;  /* ← 기존 28px → 약 40% 줄여서 12px */
 }
 .hero-grid{ display:grid; grid-template-columns: 1.6fr .9fr; gap:28px; align-items:center; }
 .hero-logo{ font-size:26px; font-weight:900; color:#4B3832; }
