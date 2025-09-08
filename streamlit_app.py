@@ -118,7 +118,7 @@ body { background-color: var(--bg); color: var(--ink); }
 .hero{
   background: linear-gradient(180deg, #FFF7F2 0%, #FFEFE6 100%);
   border:1px solid var(--line); border-radius:24px; box-shadow: var(--shadow);
-  padding:17px 32px;  /* ↓ 기존 28px에서 17px로 축소 */
+  padding:17px 32px;  /* 기존 28px → 약 40% 축소 */
 }
 .hero-grid{ display:grid; grid-template-columns: 1.6fr .9fr; gap:28px; align-items:center; }
 .hero-logo{ font-size:26px; font-weight:900; color:#4B3832; }
@@ -136,6 +136,36 @@ body { background-color: var(--bg); color: var(--ink); }
 .stTabs [role="tablist"]{
   justify-content: center !important;
   gap: 12px !important;
+}
+
+/* ── 온라인 추모관: 액자 그리드 ── */
+.frame-card{
+  background:#fff;
+  border:6px solid #F3E2D8;                  /* 바깥 프레임 */
+  border-radius:16px;
+  box-shadow: 0 8px 18px rgba(79,56,50,0.12);
+  padding:10px;
+  margin-bottom:16px;
+}
+.frame-edge{
+  background:#FFFFFF;
+  border:1px solid var(--line);               /* 얇은 선 */
+  border-radius:12px;
+  padding:8px;                                 /* 매트(여백) */
+}
+.square-thumb{
+  width:100%;
+  aspect-ratio: 1 / 1;                         /* 정사각형 */
+  object-fit: cover;                            /* 중앙 crop */
+  display:block;
+  border-radius:10px;
+}
+.frame-meta{
+  color:#6C5149;
+  font-size:12px;
+  margin-top:8px;
+  text-align:center;
+  opacity:.9;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -314,43 +344,56 @@ with tab1:
         if dup: st.info(f"중복으로 제외된 사진: {dup}장")
         st.rerun()
 
-    # 온라인 추모관 — 목록(삭제/AI변환)
+    # 온라인 추모관 — 목록(3열 액자 그리드, 삭제/AI변환)
     originals = list_uploaded_only()
     if originals:
-        for idx, img_file in enumerate(originals):
-            img_path = os.path.join(UPLOAD_FOLDER, img_file)
-            col_img, col_actions = st.columns([2,1])
-            with col_img:
-                st.image(img_path, caption=f"원본: {img_file}", use_container_width=True)
-            with col_actions:
-                # AI 변환
-                if ai_available():
-                    if st.button("AI 변환(귀여운 추모 사진)", key=f"convert_{idx}"):
-                        try:
-                            out_path = os.path.join(CONVERTED_FOLDER, f"converted_{img_file}")
-                            ai_convert_cute_memorial(img_path, out_path)
-                            st.success("변환 완료! 캐러셀에서도 볼 수 있어요.")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"변환 실패: {e}")
-                else:
-                    st.caption("AI 변환을 사용하려면:")
-                    if not OPENAI_API_KEY:
-                        st.code("Secrets/환경변수에 OPENAI_API_KEY 등록", language="bash")
-                    if openai_import_error:
-                        st.code("requirements.txt에 openai>=1.0.0 추가 후 재배포", language="bash")
+        for row_start in range(0, len(originals), 3):
+            row_files = originals[row_start:row_start+3]
+            cols = st.columns(3, gap="medium")
+            for j, img_file in enumerate(row_files):
+                idx = row_start + j
+                img_path = os.path.join(UPLOAD_FOLDER, img_file)
+                with cols[j]:
+                    data_uri = img_file_to_data_uri(img_path)
+                    st.markdown(
+                        f"""
+                        <div class="frame-card">
+                          <div class="frame-edge">
+                            <img class="square-thumb" src="{data_uri}" alt="{html.escape(img_file)}"/>
+                          </div>
+                          <div class="frame-meta">{html.escape(img_file)}</div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+                    # 액션 버튼
+                    btn_cols = st.columns([1,1])
+                    with btn_cols[0]:
+                        if ai_available():
+                            if st.button("AI 변환", key=f"convert_{idx}"):
+                                try:
+                                    out_path = os.path.join(CONVERTED_FOLDER, f"converted_{img_file}")
+                                    ai_convert_cute_memorial(img_path, out_path)
+                                    st.success("변환 완료! 위 캐러셀에서도 볼 수 있어요.")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"변환 실패: {e}")
+                        else:
+                            if not OPENAI_API_KEY:
+                                st.caption("⚠️ OPENAI_API_KEY 필요")
+                            elif openai_import_error:
+                                st.caption("⚠️ openai>=1.0.0 설치 필요")
 
-                # 삭제 기능
-                if st.button("사진 삭제", key=f"delete_{idx}"):
-                    ok1 = safe_remove(img_path)
-                    # 해당 원본으로부터 만든 변환본(delete opt.)
-                    conv_candidate = os.path.join(CONVERTED_FOLDER, f"converted_{img_file}")
-                    ok2 = safe_remove(conv_candidate)
-                    if ok1 or ok2:
-                        st.success("사진이 삭제되었습니다.")
-                    else:
-                        st.warning("삭제할 파일을 찾지 못했어요.")
-                    st.rerun()
+                    with btn_cols[1]:
+                        if st.button("삭제", key=f"delete_{idx}"):
+                            ok1 = safe_remove(img_path)
+                            conv_candidate = os.path.join(CONVERTED_FOLDER, f"converted_{img_file}")
+                            ok2 = safe_remove(conv_candidate)
+                            if ok1 or ok2:
+                                st.success("사진이 삭제되었습니다.")
+                            else:
+                                st.warning("삭제할 파일을 찾지 못했어요.")
+                            st.rerun()
     else:
         st.info("아직 업로드된 사진이 없습니다.")
 
@@ -375,6 +418,3 @@ with tab3:
         f"style='font-size:18px; color:#CFA18D; font-weight:bold;'>👉 꽃바구니 주문하러 가기</a></div>",
         unsafe_allow_html=True
     )
-
-
-
