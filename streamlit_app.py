@@ -33,6 +33,7 @@ st.markdown("""
         letter-spacing: -0.3px;
         line-height:1;
     }
+
     /* 본문 여백 */
     .main-block { margin-top: 74px; }
 
@@ -73,8 +74,10 @@ st.markdown("""
         background:#fff; border:1px solid var(--line);
         box-shadow:0 2px 8px rgba(79,56,50,.05); color:#5A3E36;
     }
-    .badge .dot{ width:8px; height:8px; border-radius:50%; background: var(--accent);
-        box-shadow:0 0 0 3px rgba(207,161,141,.18) inset; }
+    .badge .dot{
+        width:8px; height:8px; border-radius:50%; background: var(--accent);
+        box-shadow:0 0 0 3px rgba(207,161,141,.18) inset;
+    }
 
     .hero-visual{ display:flex; align-items:center; justify-content:center; }
     .kv{
@@ -91,15 +94,20 @@ st.markdown("""
         box-shadow: 0 4px 10px rgba(79,56,50,0.08);
     }
     .guest-card-header{ display:flex; align-items:center; gap:10px; margin-bottom: 8px; }
-    .guest-avatar{ width:34px; height:34px; min-width:34px; border-radius:50%;
-        background:#F0D9CF; color:#4B3832; display:flex; align-items:center; justify-content:center; font-weight:700; }
+    .guest-avatar{
+        width:34px; height:34px; min-width:34px; border-radius:50%;
+        background:#F0D9CF; color:#4B3832;
+        display:flex; align-items:center; justify-content:center; font-weight:700;
+    }
     .guest-name-time{ display:flex; flex-direction:column; line-height:1.2; }
     .guest-name{ font-weight:700; }
     .guest-time{ font-size:12px; color:#8B6F66; }
     .guest-msg{ font-size:16px; color:#4B3832; white-space:pre-wrap; margin: 6px 0 0 0; }
 
     /* ---------- 탭 헤더 ---------- */
-    div[data-baseweb="tab-list"]{ justify-content:center !important; gap:12px !important; width:100% !important; }
+    div[data-baseweb="tab-list"]{
+        justify-content:center !important; gap:12px !important; width:100% !important;
+    }
     button[role="tab"]{
         min-width: 220px; border-radius: 999px !important;
         border: 1px solid var(--line) !important; background:#FFF6EE !important;
@@ -113,7 +121,8 @@ st.markdown("""
 
     /* ---------- 캐러셀/갤러리 ---------- */
     .photo-frame{
-        background:#fff; border: 6px solid #F3E2D8; box-shadow: 0 8px 18px rgba(79,56,50,0.12);
+        background:#fff; border: 6px solid #F3E2D8;
+        box-shadow: 0 8px 18px rgba(79,56,50,0.12);
         border-radius:16px; padding:10px; margin-bottom:12px;
     }
     .photo-frame .thumb{
@@ -171,8 +180,10 @@ if os.path.exists(INFO_PATH):
         with open(INFO_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
             default_name = data.get("name", default_name)
-            if data.get("birth"): default_birth = datetime.strptime(data["birth"], "%Y-%m-%d").date()
-            if data.get("pass"):  default_pass  = datetime.strptime(data["pass"],  "%Y-%m-%d").date()
+            if data.get("birth"):
+                default_birth = datetime.strptime(data["birth"], "%Y-%m-%d").date()
+            if data.get("pass"):
+                default_pass  = datetime.strptime(data["pass"], "%Y-%m-%d").date()
     except Exception:
         pass
 
@@ -201,6 +212,7 @@ try:
         guest_lines = [ln for ln in f.readlines() if ln.strip()]
 except FileNotFoundError:
     guest_lines = []
+
 photo_count = len(list_uploaded_images())
 message_count = len(guest_lines)
 
@@ -249,7 +261,7 @@ with tab1:
         st.info("현재 업로드된 대표 사진이 없습니다. '온라인 추모관'에서 사진을 업로드해 주세요.")
     else:
         st.session_state.carousel_idx %= n
-        prev, mid, nextb = st.columns([1,6,1])
+        prev, mid, nextb = st.columns([1, 6, 1])
         with prev:
             if st.button("◀", key="carousel_prev"):
                 st.session_state.carousel_idx = (st.session_state.carousel_idx - 1) % n
@@ -317,7 +329,7 @@ with tab1:
             except ValueError:
                 continue
 
-            col_msg, col_btn = st.columns([6,1])
+            col_msg, col_btn = st.columns([6, 1])
             with col_msg:
                 st.markdown(
                     f"""
@@ -335,7 +347,7 @@ with tab1:
                 )
             with col_btn:
                 if st.button("삭제", key=f"delete_msg_{idx}"):
-                    real_idx = len(lines) - 1 - idx  # reversed에서 실제 인덱스로 환산
+                    real_idx = len(lines) - 1 - idx
                     del lines[real_idx]
                     with open("guestbook.txt", "w", encoding="utf-8") as f:
                         f.writelines(lines)
@@ -352,70 +364,10 @@ with tab1:
         for uploaded_file in uploaded_files:
             data = uploaded_file.getvalue()
             digest = file_sha256(data)[:16]
-            # 중복 방지: 동일 파일 해시가 이미 존재하면 스킵
             if any(f.startswith(digest + "_") for f in os.listdir(UPLOAD_FOLDER)):
                 dup += 1
                 continue
             safe_name_file = "".join(c for c in uploaded_file.name if c not in "\\/:*?\"<>|")
             filename = f"{digest}_{safe_name_file}"
             with open(os.path.join(UPLOAD_FOLDER, filename), "wb") as f:
-                f.write(data)
-            saved += 1
-        if saved: st.success(f"{saved}장 업로드 완료!")
-        if dup: st.info(f"중복으로 제외된 사진: {dup}장")
-        st.rerun()
-
-    image_files = list_uploaded_images()
-    if image_files:
-        cols = st.columns(3)
-        for idx, img_file in enumerate(image_files):
-            img_path = os.path.join(UPLOAD_FOLDER, img_file)
-            with cols[idx % 3]:
-                data_uri = img_file_to_data_uri(img_path)
-                st.markdown(
-                    f"""
-                    <div class="photo-frame">
-                        <img class="thumb" src="{data_uri}" alt="memorial photo">
-                    </div>
-                    """, unsafe_allow_html=True
-                )
-                if st.button("삭제", key=f"delete_img_{idx}"):
-                    os.remove(img_path)
-                    st.rerun()
-    else:
-        st.info("아직 업로드된 사진이 없습니다.")
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# ==================== ② 장례식 스트리밍 ====================
-with tab2:
-    st.markdown('<div class="page-wrap">', unsafe_allow_html=True)
-    st.header("📺 장례식 실시간 스트리밍")
-    video_url = st.text_input("YouTube 영상 URL 입력", Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster)
-    st.markdown(
-        f"<div style='text-align:center;'><iframe width='560' height='315' src='{video_url}' frameborder='0' allowfullscreen></iframe></div>",
-        unsafe_allow_html=True
-    )
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# ==================== ③ 기부/꽃바구니 ====================
-with tab3:
-    st.markdown('<div class="page-wrap">', unsafe_allow_html=True)
-    st.header("💐 조문객 기부 / 꽃바구니 주문")
-    st.markdown("- 💳 기부: 카카오페이 / 토스 / 계좌이체 가능\n- 🌹 꽃바구니 주문: 온라인 꽃집 링크 연결")
-    link = st.text_input("꽃바구니 주문 링크", "https://www.naver.com")
-    st.markdown(
-        f"<div style='text-align:center;'><a href='{link}' target='_blank' "
-        f"style='font-size:18px; color:#CFA18D; font-weight:bold;'>👉 꽃바구니 주문하러 가기</a></div>",
-        unsafe_allow_html=True
-    )
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# -------------------- 본문 종료 --------------------
-st.markdown('</div>', unsafe_allow_html=True)
-
-
-
-
-
-
+                f.write(data
