@@ -7,10 +7,9 @@ from datetime import datetime
 import html
 import json
 
-# 추가 라이브러리 (로컬 보정용)
-import io
+# --- 로컬 지브리 변환용 ---
 import numpy as np
-from PIL import Image, ImageFilter, ImageEnhance, ImageOps
+from PIL import Image, ImageFilter, ImageEnhance, ImageOps, ImageChops
 
 # -------------------- 기본 설정 --------------------
 st.set_page_config(page_title="반려동물 추모관", page_icon="🐾", layout="wide")
@@ -44,12 +43,8 @@ if OPENAI_API_KEY:
     except Exception as e:
         openai_import_error = e
 
-def ai_available() -> bool:
-    return client is not None
-
 # -------------------- 유틸 --------------------
 def list_all_images_for_carousel():
-    """업로드+변환 폴더 모두에서 이미지 수집 (히어로 배지 카운트 등에 사용)"""
     files = []
     for folder in [UPLOAD_FOLDER, CONVERTED_FOLDER]:
         if os.path.exists(folder):
@@ -61,7 +56,6 @@ def list_all_images_for_carousel():
     return sorted(files)
 
 def list_uploaded_only():
-    """업로드 폴더의 원본만(파일명 리스트)"""
     if not os.path.exists(UPLOAD_FOLDER):
         return []
     return sorted([
@@ -70,7 +64,6 @@ def list_uploaded_only():
     ])
 
 def list_converted_only():
-    """변환 폴더의 변환본 절대경로 리스트"""
     if not os.path.exists(CONVERTED_FOLDER):
         return []
     return sorted([
@@ -79,9 +72,6 @@ def list_converted_only():
         if f.lower().endswith((".png", ".jpg", ".jpeg"))
     ])
 
-def file_sha256(byte_data: bytes) -> str:
-    return hashlib.sha256(byte_data).hexdigest()
-
 def img_file_to_data_uri(path: str) -> str:
     mime, _ = mimetypes.guess_type(path)
     if mime is None:
@@ -89,10 +79,6 @@ def img_file_to_data_uri(path: str) -> str:
     with open(path, "rb") as f:
         b64 = base64.b64encode(f.read()).decode("utf-8")
     return f"data:{mime};base64,{b64}"
-
-def initials_from_name(name: str) -> str:
-    name = name.strip()
-    return "🕊️" if not name else name[0].upper()
 
 def safe_remove(path: str) -> bool:
     try:
@@ -103,63 +89,82 @@ def safe_remove(path: str) -> bool:
     except Exception:
         return False
 
-# -------------------- 로컬 보정(대체 변환) --------------------
-def local_memorial_filter(in_path: str, out_path: str):
-    """PIL만으로 따뜻한 추모 사진 톤을 만드는 대체 변환"""
+# -------------------- 로컬 지브리풍 필터 --------------------
+def local_ghibli_filter(in_path: str, out_path: str, *, edge_strength=1.2, posterize_bits=4):
+    """
+    지브리풍(만화풍):
+    - 색상 간소화(포스터라이즈)
+    - 윤곽선(소벨) 검출 후 Multiply 합성
+    - 파스텔/따뜻한 톤 + 소프트글로우 + 옅은 테두리
+    """
     img = Image.open(in_path).convert("RGB")
-
-    # 1) 밝기/대비/채도 살짝 업
-    img = ImageEnhance.Brightness(img).enhance(1.06)
-    img = ImageEnhance.Contrast(img).enhance(1.07)
-    img = ImageEnhance.Color(img).enhance(1.12)
-
-    # 2) 따뜻한 톤 오버레이
-    warm = Image.new("RGB", img.size, (255, 216, 194))  # #FFD8C2
-    img = Image.blend(img, warm, alpha=0.08)
-
-    # 3) 비네팅
     w, h = img.size
-    y, x = np.ogrid[:h, :w]
-    cx, cy = w / 2, h / 2
-    r = np.sqrt((x - cx) ** 2 + (y - cy) ** 2)
-    max_r = np.sqrt(cx ** 2 + cy ** 2)
-    mask_arr = (1.0 - (r / max_r)) ** 1.5
-    mask_arr = np.clip(mask_arr * 255, 0, 255).astype(np.uint8)
-    vignette = Image.fromarray(mask_arr, mode="L")
-    dark = Image.new("RGB", (w, h), (0, 0, 0))
-    img = Image.composite(img, Image.blend(img, dark, 0.18), ImageOps.invert(vignette))
 
-    # 4) 소프트 글로우
-    blur = img.filter(ImageFilter.GaussianBlur(radius=2.0))
-    img = Image.blend(img, blur, alpha=0.12)
+    # 1) 부드럽게 + 색/밝기 살짝 업
+    img = img.filter(ImageFilter.MedianFilter(size=3))
+    img = ImageEnhance.Color(img).enhance(1.15)
+    img = ImageEnhance.Brightness(img).enhance(1.05)
 
-    # 5) 엽서 느낌의 옅은 테두리
-    border = 10
-    framed = Image.new("RGB", (w + border * 2, h + border * 2), (243, 226, 216))  # #F3E2D8
-    framed.paste(img, (border, border))
+    # 2) 포스터라이즈로 색 단계 축소
+    base = ImageOps.posterize(img, bits=posterize_bits)
+
+    # 3) 소벨 윤곽선
+    gray = np.array(img.convert("L"), dtype=np.float32)
+    Kx = np.array([[-1,0,1],[-2,0,2],[-1,0,1]], dtype=np.float32)
+    Ky = np.array([[-1,-2,-1],[0,0,0],[1,2,1]], dtype=np.float32)
+
+    def conv2(a, k):
+        kh, kw = k.shape
+        pad_y, pad_x = kh//2, kw//2
+        padded = np.pad(a, ((pad_y,pad_y),(pad_x,pad_x)), mode="reflect")
+        out = np.zeros_like(a)
+        for yy in range(a.shape[0]):
+            for xx in range(a.shape[1]):
+                out[yy, xx] = (padded[yy:yy+kh, xx:xx+kw] * k).sum()
+        return out
+
+    Gx = conv2(gray, Kx)
+    Gy = conv2(gray, Ky)
+    mag = np.sqrt(Gx*Gx + Gy*Gy)
+    mag = mag / (mag.max() + 1e-5)
+
+    # 4) 윤곽선 마스크 → 검은 선
+    edges = (1.0 - np.clip(mag * 1.7 * edge_strength, 0, 1)) * 255.0
+    edges_img = Image.fromarray(edges.astype(np.uint8), mode="L")
+    edge_rgb = ImageOps.invert(edges_img).convert("RGB")  # 선=흑, 배경=백
+
+    # 5) 윤곽선 Multiply 합성
+    merged = ImageChops.multiply(base, edge_rgb)
+
+    # 6) 파스텔/따뜻한 톤 + 글로우
+    merged = ImageEnhance.Color(merged).enhance(1.10)
+    warm = Image.new("RGB", merged.size, (255, 230, 205))
+    merged = Image.blend(merged, warm, alpha=0.06)
+    blur = merged.filter(ImageFilter.GaussianBlur(radius=1.6))
+    merged = Image.blend(merged, blur, alpha=0.10)
+
+    # 7) 엽서 느낌 테두리
+    border = 8
+    framed = Image.new("RGB", (w + border*2, h + border*2), (243, 226, 216))  # #F3E2D8
+    framed.paste(merged, (border, border))
     framed.save(out_path, format="PNG")
 
-# -------------------- OpenAI 변환 (+403 폴백) --------------------
-def ai_convert_cute_memorial(img_path: str, out_path: str, engine_choice: str):
+# -------------------- AI 지브리 변환 (OpenAI 시도→403/키없음 시 로컬 폴백) --------------------
+def ai_convert_cute_memorial(img_path: str, out_path: str):
     """
-    engine_choice:
-      - "OpenAI 고급 변환" → OpenAI 시도 후 403/접근 문제 시 로컬 폴백
-      - "로컬 보정(대체)"   → 바로 로컬 보정
+    고정 지브리풍:
+      - OpenAI(gpt-image-1) 편집 지브리 프롬프트 시도
+      - 403/권한 문제 또는 키 미설정/클라이언트 실패면 로컬 지브리 폴백
     """
-    # 로컬 강제 선택 시
-    if engine_choice == "로컬 보정(대체)":
-        local_memorial_filter(img_path, out_path)
-        return
-
-    # OpenAI 시도
+    # 키/클라이언트 없으면 바로 로컬
     if client is None:
-        # 키 미설정/클라이언트 불가 → 로컬 폴백
-        local_memorial_filter(img_path, out_path)
+        local_ghibli_filter(img_path, out_path)
         return
 
     prompt = (
-        "반려동물 추모 사진 스타일. 따뜻하고 밝은 색감, 은은한 보케, "
-        "부드러운 비네팅, 과하지 않은 화사함, 엽서 느낌."
+        "Studio Ghibli style, hand-painted watercolor background, soft cel-shading, "
+        "warm pastel palette, gentle bloom, subtle film grain, clean black outlines, "
+        "storybook illustration look. Keep subject cute and serene."
     )
     try:
         with open(img_path, "rb") as f:
@@ -167,7 +172,7 @@ def ai_convert_cute_memorial(img_path: str, out_path: str, engine_choice: str):
                 model="gpt-image-1",
                 image=f,
                 prompt=prompt,
-                size="1024x1024",  # 최신 지원 사이즈
+                size="1024x1024",
             )
         b64_img = resp.data[0].b64_json
         img_bytes = base64.b64decode(b64_img)
@@ -175,13 +180,13 @@ def ai_convert_cute_memorial(img_path: str, out_path: str, engine_choice: str):
             out.write(img_bytes)
     except Exception as e:
         msg = str(e)
-        # 조직 인증 미완료/권한 문제면 자동 폴백
+        # 조직 인증/권한 문제 등은 자동 폴백
         if ("403" in msg) or ("must be verified" in msg) or ("access" in msg.lower()):
-            local_memorial_filter(img_path, out_path)
+            local_ghibli_filter(img_path, out_path)
         else:
             raise
 
-# -------------------- 스타일 --------------------
+# -------------------- 스타일(CSS) --------------------
 st.markdown("""
 <style>
 :root{
@@ -190,74 +195,33 @@ st.markdown("""
 }
 body { background-color: var(--bg); color: var(--ink); }
 .page-wrap{ max-width:1180px; margin:0 auto; }
-
-/* 상단 고정 바 */
-.topbar-fixed {
-  position: fixed; top: 0; left: 0; right: 0; height: 60px;
+.topbar-fixed { position:fixed; top:0; left:0; right:0; height:60px;
   background:#FAE8D9; border-bottom:1px solid var(--line);
-  display:flex; align-items:center; padding:0 24px; z-index:1000;
-}
+  display:flex; align-items:center; padding:0 24px; z-index:1000; }
 .topbar-fixed .brand { font-size:28px; font-weight:900; color:#4B3832; }
-.main-block { margin-top: 74px; }
-
-/* 히어로 */
-.hero{
-  background: linear-gradient(180deg, #FFF7F2 0%, #FFEFE6 100%);
-  border:1px solid var(--line); border-radius:24px; box-shadow: var(--shadow);
-  padding:17px 32px;
-}
-.hero-grid{ display:grid; grid-template-columns: 1.6fr .9fr; gap:28px; align-items:center; }
+.main-block { margin-top:74px; }
+.hero{ background:linear-gradient(180deg,#FFF7F2 0%,#FFEFE6 100%);
+  border:1px solid var(--line); border-radius:24px; box-shadow:var(--shadow); padding:17px 32px; }
+.hero-grid{ display:grid; grid-template-columns:1.6fr .9fr; gap:28px; align-items:center; }
 .hero-logo{ font-size:26px; font-weight:900; color:#4B3832; }
 .tagline{ font-size:18px; color:#6C5149; margin-bottom:14px; }
 .badges{ display:flex; gap:10px; flex-wrap:wrap; }
-.badge{ padding:6px 10px; border-radius:999px; font-weight:700; font-size:13px; background:#fff; border:1px solid var(--line); box-shadow:0 2px 8px rgba(79,56,50,.05); color:#5A3E36; }
+.badge{ padding:6px 10px; border-radius:999px; font-weight:700; font-size:13px;
+  background:#fff; border:1px solid var(--line); box-shadow:0 2px 8px rgba(79,56,50,.05); color:#5A3E36; }
 .badge .dot{ width:8px; height:8px; border-radius:50%; background: var(--accent); }
-
-/* 상단 대표 이미지 크기 */
-.hero-visual .kv img{
-  width:50%;
-  display:block;
-}
-
-.photo-frame{ background:#fff; border:6px solid #F3E2D8; box-shadow: 0 8px 18px rgba(79,56,50,0.12); border-radius:16px; padding:10px; margin-bottom:12px; }
+.hero-visual .kv img{ width:50%; display:block; }
+.photo-frame{ background:#fff; border:6px solid #F3E2D8; box-shadow:0 8px 18px rgba(79,56,50,0.12);
+  border-radius:16px; padding:10px; margin-bottom:12px; }
 .photo-frame .thumb{ width:70%; display:block; border-radius:10px; margin:0 auto; }
-
-.guest-card{ background: linear-gradient(180deg, #FFF8F1 0%, #FFFFFF 100%); border:1px solid var(--line);
-  border-left:6px solid var(--accent); border-radius:14px; padding:14px 16px; margin:10px 0 16px; box-shadow:0 4px 10px rgba(79,56,50,0.08); }
-
-.stTabs [role="tablist"]{
-  justify-content: center !important;
-  gap: 12px !important;
-}
-
-.frame-card{
-  background:#fff;
-  border:6px solid #F3E2D8;
-  border-radius:16px;
-  box-shadow: 0 8px 18px rgba(79,56,50,0.12);
-  padding:10px;
-  margin-bottom:16px;
-}
-.frame-edge{
-  background:#FFFFFF;
-  border:1px solid var(--line);
-  border-radius:12px;
-  padding:8px;
-}
-.square-thumb{
-  width:100%;
-  aspect-ratio: 1 / 1;
-  object-fit: cover;
-  display:block;
-  border-radius:10px;
-}
-.frame-meta{
-  color:#6C5149;
-  font-size:12px;
-  margin-top:8px;
-  text-align:center;
-  opacity:.9;
-}
+.guest-card{ background:linear-gradient(180deg,#FFF8F1 0%,#FFFFFF 100%);
+  border:1px solid var(--line); border-left:6px solid var(--accent); border-radius:14px;
+  padding:14px 16px; margin:10px 0 16px; box-shadow:0 4px 10px rgba(79,56,50,0.08); }
+.stTabs [role="tablist"]{ justify-content:center !important; gap:12px !important; }
+.frame-card{ background:#fff; border:6px solid #F3E2D8; border-radius:16px;
+  box-shadow:0 8px 18px rgba(79,56,50,0.12); padding:10px; margin-bottom:16px; }
+.frame-edge{ background:#FFFFFF; border:1px solid var(--line); border-radius:12px; padding:8px; }
+.square-thumb{ width:100%; aspect-ratio:1/1; object-fit:cover; display:block; border-radius:10px; }
+.frame-meta{ color:#6C5149; font-size:12px; margin-top:8px; text-align:center; opacity:.9; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -294,27 +258,6 @@ if st.sidebar.button("저장하기"):
         }, f, ensure_ascii=False, indent=2)
     st.sidebar.success("저장 완료!")
     st.rerun()
-
-# 변환 엔진 선택 (OpenAI/로컬)
-st.sidebar.markdown("---")
-st.sidebar.subheader("🛠 변환 엔진")
-engine = st.sidebar.radio(
-    "사용할 엔진을 선택하세요",
-    ["OpenAI 고급 변환", "로컬 보정(대체)"],
-    index=0 if ai_available() else 1,
-)
-# (선택) 현재 키 지문 표시 & 간단 연결 테스트
-if OPENAI_API_KEY:
-    masked = OPENAI_API_KEY[:7] + "..." + OPENAI_API_KEY[-4:]
-    st.sidebar.caption(f"키 지문: {masked}")
-if st.sidebar.button("OpenAI 연결 테스트"):
-    try:
-        if not ai_available():
-            raise RuntimeError("클라이언트가 준비되지 않았어요. OPENAI_API_KEY 확인.")
-        _ = client.models.list()
-        st.sidebar.success("✅ 연결 OK")
-    except Exception as e:
-        st.sidebar.error(f"❌ 연결 실패: {e}")
 
 # -------------------- 히어로 --------------------
 try:
@@ -432,7 +375,7 @@ with tab1:
                     <div class="guest-card-header" style="display:flex; gap:12px; align-items:center; margin-bottom:6px;">
                         <div class="guest-avatar" style="width:36px;height:36px;border-radius:50%;
                              display:flex;align-items:center;justify-content:center;background:#FAE8D9;
-                             color:#6C5149;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.05);">🕊️</div>
+                             color:#6C5149;font-weight:700;box-shadow:0 2px 6px rgba(79,56,50,0.05);">🕊️</div>
                         <div class="guest-name-time">
                             <span class="guest-name" style="color:#4B3832;font-weight:700;">{safe_user}</span>
                             <span class="guest-time" style="color:#9B8F88;font-size:12px;margin-left:6px;">· {safe_time}</span>
@@ -446,9 +389,9 @@ with tab1:
                 """, unsafe_allow_html=True)
             with col_btn:
                 if st.button("삭제", key=f"del_msg_{idx}"):
-                    real_idx = len(guest_lines)-1-idx
+                    real_idx = len(guest_lines) - 1 - idx
                     del guest_lines[real_idx]
-                    with open("guestbook.txt","w",encoding="utf-8") as f:
+                    with open("guestbook.txt", "w", encoding="utf-8") as f:
                         f.writelines(guest_lines)
                     st.rerun()
     else:
@@ -457,7 +400,7 @@ with tab1:
     # 온라인 추모관 — 업로드
     st.subheader("🖼️ 온라인 추모관")
     with st.form("gallery_upload", clear_on_submit=True):
-        uploaded_files = st.file_uploader("사진 업로드", type=["png","jpg","jpeg"], accept_multiple_files=True)
+        uploaded_files = st.file_uploader("사진 업로드", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
         submit = st.form_submit_button("업로드")
     if submit and uploaded_files:
         saved, dup = 0, 0
@@ -476,35 +419,28 @@ with tab1:
         if dup: st.info(f"중복으로 제외된 사진: {dup}장")
         st.rerun()
 
-    # 전체 일괄 변환 버튼
-    st.caption("💡 ‘모두 AI 변환’을 누르면 업로드된 원본 중 아직 변환본이 없는 사진만 변환합니다.")
-    if client is None and engine == "OpenAI 고급 변환":
-        st.button("모두 AI 변환", disabled=True, help="OPENAI_API_KEY 설정 필요 또는 엔진을 '로컬 보정'으로 전환하세요.")
-    else:
-        if st.button("모두 AI 변환"):
-            try:
-                originals_for_bulk = list_uploaded_only()
-                converted_names = set(os.listdir(CONVERTED_FOLDER)) if os.path.exists(CONVERTED_FOLDER) else set()
-                done, skipped = 0, 0
-                for img_file in originals_for_bulk:
-                    out_name = f"converted_{img_file}"
-                    if out_name in converted_names:
-                        skipped += 1
-                        continue
-                    in_path = os.path.join(UPLOAD_FOLDER, img_file)
-                    out_path = os.path.join(CONVERTED_FOLDER, out_name)
-                    ai_convert_cute_memorial(in_path, out_path, engine_choice=engine)
-                    done += 1
-                st.success(f"변환 완료: {done}장 (이미 변환되어 건너뜀: {skipped}장)")
-                st.rerun()
-            except Exception as e:
-                msg = str(e)
-                if "403" in msg or "must be verified" in msg:
-                    st.error("❌ OpenAI 이미지 편집은 조직 인증이 필요합니다. 지금은 로컬 보정으로 이용해 주세요.")
-                else:
-                    st.error(f"일괄 변환 실패: {e}")
+    # 모두 AI 변환 (지브리 고정 / OpenAI→403 시 로컬 지브리 폴백)
+    st.caption("💡 ‘모두 AI 변환’을 누르면 미변환 원본만 지브리풍으로 일괄 변환합니다.")
+    if st.button("모두 AI 변환"):
+        try:
+            originals_for_bulk = list_uploaded_only()
+            converted_names = set(os.listdir(CONVERTED_FOLDER)) if os.path.exists(CONVERTED_FOLDER) else set()
+            done, skipped = 0, 0
+            for img_file in originals_for_bulk:
+                out_name = f"converted_{img_file}"
+                if out_name in converted_names:
+                    skipped += 1
+                    continue
+                in_path = os.path.join(UPLOAD_FOLDER, img_file)
+                out_path = os.path.join(CONVERTED_FOLDER, out_name)
+                ai_convert_cute_memorial(in_path, out_path)
+                done += 1
+            st.success(f"변환 완료: {done}장 (이미 변환되어 건너뜀: {skipped}장)")
+            st.rerun()
+        except Exception as e:
+            st.error(f"일괄 변환 실패: {e}")
 
-    # 온라인 추모관 — 목록(3열 액자 그리드, 삭제/AI변환)
+    # 온라인 추모관 — 목록(3열 액자 그리드, 삭제/AI 변환)
     originals = list_uploaded_only()
     if originals:
         for row_start in range(0, len(originals), 3):
@@ -531,7 +467,7 @@ with tab1:
                         if st.button("AI 변환", key=f"convert_{idx}"):
                             try:
                                 out_path = os.path.join(CONVERTED_FOLDER, f"converted_{img_file}")
-                                ai_convert_cute_memorial(img_path, out_path, engine_choice=engine)
+                                ai_convert_cute_memorial(img_path, out_path)
                                 st.success("변환 완료! 위 캐러셀에서도 볼 수 있어요.")
                                 st.rerun()
                             except Exception as e:
