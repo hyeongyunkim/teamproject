@@ -18,13 +18,13 @@ os.makedirs(CONVERTED_FOLDER, exist_ok=True)
 BASE_IMG_URL = "https://github.com/hyeongyunkim/teamproject/raw/main/petfuneral.png"
 INFO_PATH = "memorial_info.json"
 
-# -------------------- OpenAI 설정 (선택) --------------------
+# -------------------- OpenAI 설정 --------------------
 OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", ""))
 client = None
 openai_import_error = None
 if OPENAI_API_KEY:
     try:
-        from openai import OpenAI  # pip install openai>=1.0.0
+        from openai import OpenAI
         client = OpenAI(api_key=OPENAI_API_KEY)
     except Exception as e:
         openai_import_error = e
@@ -45,7 +45,7 @@ def ai_convert_cute_memorial(img_path: str, out_path: str):
             model="gpt-image-1",
             image=f,
             prompt=prompt,
-            size="512x512",
+            size="1024x1024",   # ✅ 수정 완료
         )
     b64_img = resp.data[0].b64_json
     img_bytes = base64.b64decode(b64_img)
@@ -54,7 +54,6 @@ def ai_convert_cute_memorial(img_path: str, out_path: str):
 
 # -------------------- 유틸 --------------------
 def list_all_images_for_carousel():
-    """업로드+변환 폴더 모두에서 이미지 수집 (히어로 배지 카운트 등에 사용)"""
     files = []
     for folder in [UPLOAD_FOLDER, CONVERTED_FOLDER]:
         if os.path.exists(folder):
@@ -66,14 +65,12 @@ def list_all_images_for_carousel():
     return sorted(files)
 
 def list_uploaded_only():
-    """업로드 폴더의 원본만"""
     return sorted([
         f for f in os.listdir(UPLOAD_FOLDER)
         if f.lower().endswith((".png", ".jpg", ".jpeg"))
     ])
 
 def list_converted_only():
-    """변환 폴더의 변환본 절대경로 리스트"""
     if not os.path.exists(CONVERTED_FOLDER):
         return []
     return sorted([
@@ -116,7 +113,6 @@ st.markdown("""
 body { background-color: var(--bg); color: var(--ink); }
 .page-wrap{ max-width:1180px; margin:0 auto; }
 
-/* 상단 고정 바 */
 .topbar-fixed {
   position: fixed; top: 0; left: 0; right: 0; height: 60px;
   background:#FAE8D9; border-bottom:1px solid var(--line);
@@ -125,7 +121,6 @@ body { background-color: var(--bg); color: var(--ink); }
 .topbar-fixed .brand { font-size:28px; font-weight:900; color:#4B3832; }
 .main-block { margin-top: 74px; }
 
-/* 히어로 — 세로 길이 축소 */
 .hero{
   background: linear-gradient(180deg, #FFF7F2 0%, #FFEFE6 100%);
   border:1px solid var(--line); border-radius:24px; box-shadow: var(--shadow);
@@ -138,7 +133,6 @@ body { background-color: var(--bg); color: var(--ink); }
 .badge{ padding:6px 10px; border-radius:999px; font-weight:700; font-size:13px; background:#fff; border:1px solid var(--line); box-shadow:0 2px 8px rgba(79,56,50,.05); color:#5A3E36; }
 .badge .dot{ width:8px; height:8px; border-radius:50%; background: var(--accent); }
 
-/* 상단 대표 이미지 크기 줄이기 (50%), 원래 위치 유지 */
 .hero-visual .kv img{
   width:50%;
   display:block;
@@ -150,13 +144,11 @@ body { background-color: var(--bg); color: var(--ink); }
 .guest-card{ background: linear-gradient(180deg, #FFF8F1 0%, #FFFFFF 100%); border:1px solid var(--line);
   border-left:6px solid var(--accent); border-radius:14px; padding:14px 16px; margin:10px 0 16px; box-shadow:0 4px 10px rgba(79,56,50,0.08); }
 
-/* 탭 중앙 정렬 */
 .stTabs [role="tablist"]{
   justify-content: center !important;
   gap: 12px !important;
 }
 
-/* 온라인 추모관 액자 그리드 */
 .frame-card{
   background:#fff;
   border:6px solid #F3E2D8;
@@ -252,12 +244,11 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# -------------------- 탭 (중앙정렬) --------------------
+# -------------------- 탭 --------------------
 tab1, tab2, tab3 = st.tabs(["📜 부고장/방명록/추모관", "📺 장례식 스트리밍", "💐 기부/꽃바구니"])
 
-# ====== 탭1: 부고장/방명록/추모관 ======
+# ====== 탭1 ======
 with tab1:
-    # === 캐러셀: "In Loving Memory"에는 변환본만 표시 ===
     st.markdown("<h2 style='text-align:center;'>In Loving Memory</h2>", unsafe_allow_html=True)
 
     converted_list = list_converted_only()
@@ -288,7 +279,7 @@ with tab1:
             if st.button("▶", key="carousel_next"):
                 st.session_state.carousel_idx = (st.session_state.carousel_idx + 1) % n
     else:
-        st.info("아직 변환된 사진이 없습니다. 아래 ‘온라인 추모관’에서 업로드 후 ‘AI 변환’ 또는 ‘모두 AI 변환’을 눌러 주세요.")
+        st.info("아직 변환된 사진이 없습니다. 아래에서 ‘AI 변환’ 또는 ‘모두 AI 변환’을 눌러주세요.")
 
     # 부고장
     st.subheader("📜 부고장")
@@ -302,7 +293,7 @@ with tab1:
     </div>
     """, unsafe_allow_html=True)
 
-    # 방명록 작성
+    # 방명록
     st.subheader("✍️ 방명록")
     name = st.text_input("이름")
     message = st.text_area("메시지")
@@ -322,7 +313,6 @@ with tab1:
             guest_lines = [ln for ln in f.readlines() if ln.strip()]
     except FileNotFoundError:
         guest_lines = []
-
     if guest_lines:
         for idx, line in enumerate(reversed(guest_lines)):
             try:
@@ -331,24 +321,10 @@ with tab1:
                 continue
             col_msg, col_btn = st.columns([6,1])
             with col_msg:
-                safe_user = html.escape(user)
-                safe_time = html.escape(time_str)
-                safe_msg = html.escape(msg).replace("\n", "<br>")
                 st.markdown(f"""
                 <div class="guest-card">
-                    <div class="guest-card-header" style="display:flex; gap:12px; align-items:center; margin-bottom:6px;">
-                        <div class="guest-avatar" style="width:36px;height:36px;border-radius:50%;
-                             display:flex;align-items:center;justify-content:center;background:#FAE8D9;
-                             color:#6C5149;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.05);">🕊️</div>
-                        <div class="guest-name-time">
-                            <span class="guest-name" style="color:#4B3832;font-weight:700;">{safe_user}</span>
-                            <span class="guest-time" style="color:#9B8F88;font-size:12px;margin-left:6px;">· {safe_time}</span>
-                        </div>
-                    </div>
-                    <div class="guest-msg" style="margin-top:6px;padding:10px 12px;background:#FFF4ED;
-                         border:1px dashed #F0E0D7;border-radius:12px;color:#5A3E36;line-height:1.6;">
-                        {safe_msg}
-                    </div>
+                    <b>{html.escape(user)}</b> · {time_str}<br>
+                    {html.escape(msg)}
                 </div>
                 """, unsafe_allow_html=True)
             with col_btn:
@@ -361,119 +337,60 @@ with tab1:
     else:
         st.info("아직 등록된 메시지가 없습니다.")
 
-    # 온라인 추모관 — 업로드
+    # 온라인 추모관 업로드
     st.subheader("🖼️ 온라인 추모관")
     with st.form("gallery_upload", clear_on_submit=True):
         uploaded_files = st.file_uploader("사진 업로드", type=["png","jpg","jpeg"], accept_multiple_files=True)
         submit = st.form_submit_button("업로드")
     if submit and uploaded_files:
-        saved, dup = 0, 0
         for uploaded_file in uploaded_files:
             data = uploaded_file.getvalue()
             digest = hashlib.sha256(data).hexdigest()[:16]
-            if any(f.startswith(digest + "_") for f in os.listdir(UPLOAD_FOLDER)):
-                dup += 1
-                continue
             safe_name_file = "".join(c for c in uploaded_file.name if c not in "\\/:*?\"<>|")
             filename = f"{digest}_{safe_name_file}"
             with open(os.path.join(UPLOAD_FOLDER, filename), "wb") as f:
                 f.write(data)
-            saved += 1
-        if saved: st.success(f"{saved}장 업로드 완료!")
-        if dup: st.info(f"중복으로 제외된 사진: {dup}장")
+        st.success("업로드 완료!")
         st.rerun()
 
-    # === (추가) 전체 일괄 변환 버튼 ===
+    # 일괄 변환 버튼
     st.caption("💡 ‘모두 AI 변환’을 누르면 업로드된 원본 중 아직 변환본이 없는 사진만 변환합니다.")
-    if client is None:
-        st.button("모두 AI 변환", disabled=True, help="OPENAI_API_KEY 설정 필요")
-    else:
-        if st.button("모두 AI 변환"):
-            try:
-                originals_for_bulk = list_uploaded_only()
-                converted_names = set(os.listdir(CONVERTED_FOLDER)) if os.path.exists(CONVERTED_FOLDER) else set()
-                done, skipped = 0, 0
-                for img_file in originals_for_bulk:
-                    out_name = f"converted_{img_file}"
-                    if out_name in converted_names:
-                        skipped += 1
-                        continue
-                    in_path = os.path.join(UPLOAD_FOLDER, img_file)
-                    out_path = os.path.join(CONVERTED_FOLDER, out_name)
-                    ai_convert_cute_memorial(in_path, out_path)
-                    done += 1
-                st.success(f"변환 완료: {done}장 (이미 변환되어 건너뜀: {skipped}장)")
-                st.rerun()
-            except Exception as e:
-                st.error(f"일괄 변환 실패: {e}")
+    if client and st.button("모두 AI 변환"):
+        for img_file in list_uploaded_only():
+            out_name = f"converted_{img_file}"
+            out_path = os.path.join(CONVERTED_FOLDER, out_name)
+            if not os.path.exists(out_path):
+                ai_convert_cute_memorial(os.path.join(UPLOAD_FOLDER, img_file), out_path)
+        st.success("일괄 변환 완료!")
+        st.rerun()
 
-    # 온라인 추모관 — 목록(3열 액자 그리드, 삭제/AI변환)
+    # 원본 목록 표시 (삭제/개별 변환)
     originals = list_uploaded_only()
     if originals:
         for row_start in range(0, len(originals), 3):
-            row_files = originals[row_start:row_start+3]
             cols = st.columns(3, gap="medium")
-            for j, img_file in enumerate(row_files):
-                idx = row_start + j
+            for j, img_file in enumerate(originals[row_start:row_start+3]):
                 img_path = os.path.join(UPLOAD_FOLDER, img_file)
                 with cols[j]:
                     data_uri = img_file_to_data_uri(img_path)
-                    st.markdown(
-                        f"""
-                        <div class="frame-card">
-                          <div class="frame-edge">
-                            <img class="square-thumb" src="{data_uri}" alt="{html.escape(img_file)}"/>
-                          </div>
-                          <div class="frame-meta">{html.escape(img_file)}</div>
-                        </div>
-                        """,
-                        unsafe_allow_html=True
-                    )
-                    # 액션 버튼
-                    b1, b2 = st.columns(2)
-                    with b1:
-                        if client is not None:
-                            if st.button("AI 변환", key=f"convert_{idx}"):
-                                try:
-                                    out_path = os.path.join(CONVERTED_FOLDER, f"converted_{img_file}")
-                                    ai_convert_cute_memorial(img_path, out_path)
-                                    st.success("변환 완료! 위 캐러셀에서도 볼 수 있어요.")
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"변환 실패: {e}")
-                        else:
-                            if not OPENAI_API_KEY:
-                                st.caption("⚠️ OPENAI_API_KEY 필요")
-                            elif openai_import_error:
-                                st.caption("⚠️ openai>=1.0.0 설치 필요")
-                    with b2:
-                        if st.button("삭제", key=f"delete_{idx}"):
-                            ok1 = safe_remove(img_path)
-                            conv_candidate = os.path.join(CONVERTED_FOLDER, f"converted_{img_file}")
-                            ok2 = safe_remove(conv_candidate)
-                            st.success("사진이 삭제되었습니다." if (ok1 or ok2) else "삭제할 파일을 찾지 못했어요.")
-                            st.rerun()
+                    st.markdown(f"<img class='square-thumb' src='{data_uri}'>", unsafe_allow_html=True)
+                    if client and st.button("AI 변환", key=f"convert_{img_file}"):
+                        out_path = os.path.join(CONVERTED_FOLDER, f"converted_{img_file}")
+                        ai_convert_cute_memorial(img_path, out_path)
+                        st.success("변환 완료! 위 캐러셀에서 확인하세요.")
+                        st.rerun()
+                    if st.button("삭제", key=f"delete_{img_file}"):
+                        safe_remove(img_path)
+                        safe_remove(os.path.join(CONVERTED_FOLDER, f"converted_{img_file}"))
+                        st.success("삭제 완료")
+                        st.rerun()
     else:
         st.info("아직 업로드된 사진이 없습니다.")
 
-# ====== 탭2: 스트리밍 ======
+# ====== 탭2 ======
 with tab2:
-    st.markdown('<div class="page-wrap">', unsafe_allow_html=True)
     st.header("📺 장례식 실시간 스트리밍")
     video_url = st.text_input("YouTube 영상 URL 입력", "https://www.youtube.com/embed/dQw4w9WgXcQ")
-    st.markdown(
-        f"<div style='text-align:center;'><iframe width='560' height='315' src='{video_url}' frameborder='0' allowfullscreen></iframe></div>",
-        unsafe_allow_html=True
-    )
+    st.markdown(f"<iframe width='560' height='315' src='{video_url}'></iframe>", unsafe_allow_html=True)
 
-# ====== 탭3: 기부/꽃바구니 ======
-with tab3:
-    st.markdown('<div class="page-wrap">', unsafe_allow_html=True)
-    st.header("💐 조문객 기부 / 꽃바구니 주문")
-    st.markdown("- 💳 기부: 카카오페이 / 토스 / 계좌이체 가능\n- 🌹 꽃바구니 주문: 온라인 꽃집 링크 연결")
-    link = st.text_input("꽃바구니 주문 링크", "https://www.naver.com")
-    st.markdown(
-        f"<div style='text-align:center;'><a href='{link}' target='_blank' "
-        f"style='font-size:18px; color:#CFA18D; font-weight:bold;'>👉 꽃바구니 주문하러 가기</a></div>",
-        unsafe_allow_html=True
-    )
+# ====== 탭3 ======
