@@ -233,7 +233,7 @@ selected_style = st.sidebar.selectbox(
     "변환할 애니메이션 스타일을 선택하세요",
     options=list(ANIME_STYLES.keys()),
     format_func=lambda x: ANIME_STYLES[x]["name"],
-    index=0
+    index=3  # 카툰 초상화를 기본값으로 설정
 )
 
 if st.sidebar.button("저장하기"):
