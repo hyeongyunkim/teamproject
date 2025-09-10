@@ -85,18 +85,25 @@ def safe_remove(path: str) -> bool:
     except Exception:
         return False
 
-# -------------------- OpenAI 애니메이션 셀풍 변환 --------------------
+# -------------------- OpenAI: 만화책(코믹북) 스타일 변환 --------------------
 ANIME_PROMPT = (
-    "High-quality anime-style illustration of a pet photo. "
-    "Sharp, bold, clean black outlines; strong cel shading; two-tone shadows and highlights; "
-    "bright vivid colors; minimal gradients; comic-like crisp look; expressive anime eyes. "
-    "Clear and vibrant, not blurry, not painterly, not photo-like."
+    "EXTREME comic-book / manga panel style illustration of a pet photo. "
+    "Bold, thick, clean black INKED outlines (hard lineart); "
+    "HARD two-tone cel shading with CLEAR shadow shapes; "
+    "HIGH-SATURATION FLAT colors; LIMITED color palette; "
+    "HALFTONE (screen-tone) dots in shadows/background; "
+    "crisp, vector-like shapes; high contrast; punchy look. "
+    "Background should be simple flat color or halftone pattern (no photo background). "
+    "Remove photographic detail and realistic textures. "
+    "NO gradients (or minimal), NO blur, NO soft focus, NO watercolor, "
+    "NO painterly style, NO photorealism, NO 3D, NOT a photo."
 )
 
 def ai_convert_anime_style(img_path: str, out_path: str):
     """
-    OpenAI gpt-image-1 로 '애니메이션 셀풍'으로 변환.
-    로컬 폴백 없이, 실패하면 예외를 그대로 띄웁니다.
+    OpenAI gpt-image-1 로 '만화책/코믹북' 스타일로 강하게 변환합니다.
+    - 로컬 폴백 없음. 실패 시 예외를 그대로 UI에 표시합니다.
+    - 비율을 최대한 유지하려고 size='auto' 사용 (정사각 강제 원하면 '1024x1024'로 바꾸세요).
     """
     if client is None:
         if not OPENAI_API_KEY:
@@ -110,7 +117,7 @@ def ai_convert_anime_style(img_path: str, out_path: str):
             model="gpt-image-1",
             image=f,
             prompt=ANIME_PROMPT,
-            size="auto",  # 비율 유지. 필요시 '1024x1024' 등으로 변경 가능
+            size="auto",  # 필요시 '1024x1024'/'1024x1536'/'1536x1024' 중 택1
         )
     b64_img = resp.data[0].b64_json
     img_bytes = base64.b64decode(b64_img)
@@ -318,7 +325,7 @@ with tab1:
                              color:#6C5149;font-weight:700;box-shadow:0 2px 6px rgba(79,56,50,0.05);">🕊️</div>
                         <div class="guest-name-time">
                             <span class="guest-name" style="color:#4B3832;font-weight:700;">{safe_user}</span>
-                            <span class="guest-time" style="color:#9B8F88;font-size:12px;margin-left:6px;">· {safe_time}</span>
+                            <span class="guest-time" style="color:#9B8F88; font-size:12px; margin-left:6px;">· {safe_time}</span>
                         </div>
                     </div>
                     <div class="guest-msg" style="margin-top:6px;padding:10px 12px;background:#FFF4ED;
@@ -360,7 +367,7 @@ with tab1:
         st.rerun()
 
     # 모두 AI 변환 (OpenAI 전용)
-    st.caption("💡 ‘모두 AI 변환’을 누르면 미변환 원본만 애니메이션 셀풍으로 일괄 변환합니다. (OpenAI 전용)")
+    st.caption("💡 ‘모두 AI 변환’을 누르면 미변환 원본만 강한 만화책 스타일로 일괄 변환합니다. (OpenAI 전용)")
     if st.button("모두 AI 변환"):
         try:
             originals_for_bulk = list_uploaded_only()
