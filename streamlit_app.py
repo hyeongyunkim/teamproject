@@ -6,7 +6,8 @@ import mimetypes
 from datetime import datetime
 import html
 import json
-
+git add requirements.txt
+git commit -m "Add requirements.txt for Streamlit deployment"
 # -------------------- 기본 설정 --------------------
 st.set_page_config(page_title="반려동물 추모관", page_icon="🐾", layout="wide")
 
