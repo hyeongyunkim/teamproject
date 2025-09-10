@@ -87,9 +87,10 @@ def safe_remove(path: str) -> bool:
 
 # -------------------- OpenAI 애니메이션 셀풍 변환 --------------------
 ANIME_PROMPT = (
-    "Anime-style illustration of a pet memorial photo. Bright, clean colors; "
-    "thin crisp black outlines; cel shading with minimal gradients; gentle depth-of-field; "
-    "expressive eyes; warm cheerful tone. Not watercolor, not painterly, not photo-like."
+    "High-quality anime-style illustration of a pet photo. "
+    "Sharp, bold, clean black outlines; strong cel shading; two-tone shadows and highlights; "
+    "bright vivid colors; minimal gradients; comic-like crisp look; expressive anime eyes. "
+    "Clear and vibrant, not blurry, not painterly, not photo-like."
 )
 
 def ai_convert_anime_style(img_path: str, out_path: str):
@@ -109,7 +110,7 @@ def ai_convert_anime_style(img_path: str, out_path: str):
             model="gpt-image-1",
             image=f,
             prompt=ANIME_PROMPT,
-            size="auto",  # 비율 유지. 필요시 '1024x1024', '1024x1536', '1536x1024' 중 선택 가능
+            size="auto",  # 비율 유지. 필요시 '1024x1024' 등으로 변경 가능
         )
     b64_img = resp.data[0].b64_json
     img_bytes = base64.b64decode(b64_img)
@@ -189,7 +190,7 @@ if st.sidebar.button("저장하기"):
     st.sidebar.success("저장 완료!")
     st.rerun()
 
-# (진단) 사이드바에 최소 상태 표시
+# (진단) 사이드바 상태
 with st.sidebar.expander("🔎 상태"):
     st.write("OpenAI 클라이언트:", "OK" if client else ("오류" if openai_import_error else "없음"))
     if OPENAI_API_KEY:
@@ -409,7 +410,6 @@ with tab1:
                     )
                     b1, b2 = st.columns(2)
                     with b1:
-                        # OpenAI 전용: 키/클라이언트 없으면 비활성화
                         if client is None:
                             st.button("AI 변환", key=f"convert_{idx}", disabled=True, help="OPENAI_API_KEY/조직 인증 필요")
                         else:
