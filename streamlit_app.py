@@ -89,63 +89,62 @@ def safe_remove(path: str) -> bool:
     except Exception:
         return False
 
-# -------------------- 로컬 지브리풍 필터 --------------------
-def local_ghibli_filter(in_path: str, out_path: str, *, edge_strength=1.2, posterize_bits=4):
+# 대용량 이미지 자동 리사이즈 (변환 전)
+def maybe_resize(path: str, max_side=1600):
+    try:
+        img = Image.open(path).convert("RGB")
+        w, h = img.size
+        if max(w, h) > max_side:
+            scale = max_side / max(w, h)
+            img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+            img.save(path)  # 덮어쓰기
+    except Exception:
+        pass
+
+# -------------------- 빠른 지브리풍 로컬 변환 --------------------
+def local_ghibli_filter(in_path: str, out_path: str,
+                        *, posterize_bits=4, edge_blur=1, glow=1.3):
     """
-    지브리풍(만화풍):
-    - 색상 간소화(포스터라이즈)
-    - 윤곽선(소벨) 검출 후 Multiply 합성
-    - 파스텔/따뜻한 톤 + 소프트글로우 + 옅은 테두리
+    빠른 지브리풍:
+    - 포스터라이즈(색 단계 축소)
+    - FIND_EDGES 기반 윤곽선 추출 후 농도 보정
+    - 파스텔/따뜻한 톤 + 소프트 글로우
+    - 순수 Pillow 연산(루프 없음)이라 속도 빠름
     """
     img = Image.open(in_path).convert("RGB")
     w, h = img.size
 
-    # 1) 부드럽게 + 색/밝기 살짝 업
-    img = img.filter(ImageFilter.MedianFilter(size=3))
-    img = ImageEnhance.Color(img).enhance(1.15)
-    img = ImageEnhance.Brightness(img).enhance(1.05)
+    # 1) 부드럽게 + 채도/밝기 소폭 업
+    base = img.filter(ImageFilter.MedianFilter(3))
+    base = ImageEnhance.Color(base).enhance(1.15)
+    base = ImageEnhance.Brightness(base).enhance(1.05)
 
-    # 2) 포스터라이즈로 색 단계 축소
-    base = ImageOps.posterize(img, bits=posterize_bits)
+    # 2) 포스터라이즈(만화 느낌)
+    base = ImageOps.posterize(base, bits=posterize_bits)
 
-    # 3) 소벨 윤곽선
-    gray = np.array(img.convert("L"), dtype=np.float32)
-    Kx = np.array([[-1,0,1],[-2,0,2],[-1,0,1]], dtype=np.float32)
-    Ky = np.array([[-1,-2,-1],[0,0,0],[1,2,1]], dtype=np.float32)
+    # 3) 윤곽선 (빠른 방식)
+    edge = img.convert("L").filter(ImageFilter.FIND_EDGES)
+    if edge_blur > 0:
+        edge = edge.filter(ImageFilter.GaussianBlur(edge_blur))
+    # 선을 더 진하게: 밝기/대비 조절
+    edge = ImageEnhance.Contrast(edge).enhance(2.0)
+    edge = ImageEnhance.Brightness(edge).enhance(0.5)  # 어둡게 → 검은 선
+    edge_rgb = ImageOps.invert(edge).convert("RGB")     # 흑선
 
-    def conv2(a, k):
-        kh, kw = k.shape
-        pad_y, pad_x = kh//2, kw//2
-        padded = np.pad(a, ((pad_y,pad_y),(pad_x,pad_x)), mode="reflect")
-        out = np.zeros_like(a)
-        for yy in range(a.shape[0]):
-            for xx in range(a.shape[1]):
-                out[yy, xx] = (padded[yy:yy+kh, xx:xx+kw] * k).sum()
-        return out
-
-    Gx = conv2(gray, Kx)
-    Gy = conv2(gray, Ky)
-    mag = np.sqrt(Gx*Gx + Gy*Gy)
-    mag = mag / (mag.max() + 1e-5)
-
-    # 4) 윤곽선 마스크 → 검은 선
-    edges = (1.0 - np.clip(mag * 1.7 * edge_strength, 0, 1)) * 255.0
-    edges_img = Image.fromarray(edges.astype(np.uint8), mode="L")
-    edge_rgb = ImageOps.invert(edges_img).convert("RGB")  # 선=흑, 배경=백
-
-    # 5) 윤곽선 Multiply 합성
+    # 4) 윤곽선 Multiply 합성
     merged = ImageChops.multiply(base, edge_rgb)
 
-    # 6) 파스텔/따뜻한 톤 + 글로우
-    merged = ImageEnhance.Color(merged).enhance(1.10)
+    # 5) 파스텔/따뜻한 톤 + 글로우
+    merged = ImageEnhance.Color(merged).enhance(1.08)
     warm = Image.new("RGB", merged.size, (255, 230, 205))
     merged = Image.blend(merged, warm, alpha=0.06)
-    blur = merged.filter(ImageFilter.GaussianBlur(radius=1.6))
-    merged = Image.blend(merged, blur, alpha=0.10)
+    if glow > 0:
+        blur = merged.filter(ImageFilter.GaussianBlur(radius=glow))
+        merged = Image.blend(merged, blur, alpha=0.10)
 
-    # 7) 엽서 느낌 테두리
+    # 6) 엽서 느낌 테두리
     border = 8
-    framed = Image.new("RGB", (w + border*2, h + border*2), (243, 226, 216))  # #F3E2D8
+    framed = Image.new("RGB", (w + border*2, h + border*2), (243, 226, 216))
     framed.paste(merged, (border, border))
     framed.save(out_path, format="PNG")
 
@@ -258,6 +257,16 @@ if st.sidebar.button("저장하기"):
         }, f, ensure_ascii=False, indent=2)
     st.sidebar.success("저장 완료!")
     st.rerun()
+
+# (임시) 진단 패널 - 필요 없으면 제거해도 됩니다
+with st.sidebar.expander("🔎 진단(임시)"):
+    st.write("OpenAI 클라이언트:", "OK" if client else "없음(로컬 지브리 사용)")
+    st.write("원본/변환 이미지 수:", len(list_uploaded_only()), len(list_converted_only()))
+    if OPENAI_API_KEY:
+        masked = OPENAI_API_KEY[:7] + "..." + OPENAI_API_KEY[-4:]
+        st.caption(f"키 지문: {masked}")
+    else:
+        st.caption("OpenAI 키 없음")
 
 # -------------------- 히어로 --------------------
 try:
@@ -392,6 +401,7 @@ with tab1:
                     real_idx = len(guest_lines) - 1 - idx
                     del guest_lines[real_idx]
                     with open("guestbook.txt", "w", encoding="utf-8") as f:
+                        st.write
                         f.writelines(guest_lines)
                     st.rerun()
     else:
@@ -433,6 +443,7 @@ with tab1:
                     continue
                 in_path = os.path.join(UPLOAD_FOLDER, img_file)
                 out_path = os.path.join(CONVERTED_FOLDER, out_name)
+                maybe_resize(in_path, max_side=1600)
                 ai_convert_cute_memorial(in_path, out_path)
                 done += 1
             st.success(f"변환 완료: {done}장 (이미 변환되어 건너뜀: {skipped}장)")
@@ -467,6 +478,7 @@ with tab1:
                         if st.button("AI 변환", key=f"convert_{idx}"):
                             try:
                                 out_path = os.path.join(CONVERTED_FOLDER, f"converted_{img_file}")
+                                maybe_resize(img_path, max_side=1600)
                                 ai_convert_cute_memorial(img_path, out_path)
                                 st.success("변환 완료! 위 캐러셀에서도 볼 수 있어요.")
                                 st.rerun()
@@ -489,5 +501,17 @@ with tab2:
     video_url = st.text_input("YouTube 영상 URL 입력", "https://www.youtube.com/embed/dQw4w9WgXcQ")
     st.markdown(
         f"<div style='text-align:center;'><iframe width='560' height='315' src='{video_url}' frameborder='0' allowfullscreen></iframe></div>",
+        unsafe_allow_html=True
+    )
+
+# ====== 탭3: 기부/꽃바구니 ======
+with tab3:
+    st.markdown('<div class="page-wrap">', unsafe_allow_html=True)
+    st.header("💐 조문객 기부 / 꽃바구니 주문")
+    st.markdown("- 💳 기부: 카카오페이 / 토스 / 계좌이체 가능\n- 🌹 꽃바구니 주문: 온라인 꽃집 링크 연결")
+    link = st.text_input("꽃바구니 주문 링크", "https://www.naver.com")
+    st.markdown(
+        f"<div style='text-align:center;'><a href='{link}' target='_blank' "
+        f"style='font-size:18px; color:#CFA18D; font-weight:bold;'>👉 꽃바구니 주문하러 가기</a></div>",
         unsafe_allow_html=True
     )
