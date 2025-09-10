@@ -7,6 +7,11 @@ from datetime import datetime
 import html
 import json
 
+# 추가 라이브러리 (로컬 보정용)
+import io
+import numpy as np
+from PIL import Image, ImageFilter, ImageEnhance, ImageOps
+
 # -------------------- 기본 설정 --------------------
 st.set_page_config(page_title="반려동물 추모관", page_icon="🐾", layout="wide")
 
@@ -19,12 +24,22 @@ BASE_IMG_URL = "https://github.com/hyeongyunkim/teamproject/raw/main/petfuneral.
 INFO_PATH = "memorial_info.json"
 
 # -------------------- OpenAI 설정 --------------------
-OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", ""))
+def load_api_key() -> str:
+    key = None
+    try:
+        key = st.secrets.get("OPENAI_API_KEY")
+    except Exception:
+        pass
+    if not key:
+        key = os.getenv("OPENAI_API_KEY", "")
+    return (key or "").strip()
+
+OPENAI_API_KEY = load_api_key()
 client = None
 openai_import_error = None
 if OPENAI_API_KEY:
     try:
-        from openai import OpenAI
+        from openai import OpenAI  # pip install openai
         client = OpenAI(api_key=OPENAI_API_KEY)
     except Exception as e:
         openai_import_error = e
@@ -32,28 +47,9 @@ if OPENAI_API_KEY:
 def ai_available() -> bool:
     return client is not None
 
-def ai_convert_cute_memorial(img_path: str, out_path: str):
-    """원본 이미지를 귀여운 추모 사진 느낌으로 변환"""
-    if client is None:
-        raise RuntimeError("OpenAI 클라이언트가 준비되지 않았습니다. OPENAI_API_KEY를 설정해 주세요.")
-    prompt = (
-        "귀여운 그림 느낌의 반려동물 추모 사진. "
-        "따뜻하고 밝은 색감, 은은한 보케와 부드러운 비네팅, 엽서 같은 느낌."
-    )
-    with open(img_path, "rb") as f:
-        resp = client.images.edit(
-            model="gpt-image-1",
-            image=f,
-            prompt=prompt,
-            size="1024x1024",   # ✅ 512x512 → 1024x1024
-        )
-    b64_img = resp.data[0].b64_json
-    img_bytes = base64.b64decode(b64_img)
-    with open(out_path, "wb") as out:
-        out.write(img_bytes)
-
 # -------------------- 유틸 --------------------
 def list_all_images_for_carousel():
+    """업로드+변환 폴더 모두에서 이미지 수집 (히어로 배지 카운트 등에 사용)"""
     files = []
     for folder in [UPLOAD_FOLDER, CONVERTED_FOLDER]:
         if os.path.exists(folder):
@@ -65,12 +61,16 @@ def list_all_images_for_carousel():
     return sorted(files)
 
 def list_uploaded_only():
+    """업로드 폴더의 원본만(파일명 리스트)"""
+    if not os.path.exists(UPLOAD_FOLDER):
+        return []
     return sorted([
         f for f in os.listdir(UPLOAD_FOLDER)
         if f.lower().endswith((".png", ".jpg", ".jpeg"))
     ])
 
 def list_converted_only():
+    """변환 폴더의 변환본 절대경로 리스트"""
     if not os.path.exists(CONVERTED_FOLDER):
         return []
     return sorted([
@@ -102,6 +102,84 @@ def safe_remove(path: str) -> bool:
         return False
     except Exception:
         return False
+
+# -------------------- 로컬 보정(대체 변환) --------------------
+def local_memorial_filter(in_path: str, out_path: str):
+    """PIL만으로 따뜻한 추모 사진 톤을 만드는 대체 변환"""
+    img = Image.open(in_path).convert("RGB")
+
+    # 1) 밝기/대비/채도 살짝 업
+    img = ImageEnhance.Brightness(img).enhance(1.06)
+    img = ImageEnhance.Contrast(img).enhance(1.07)
+    img = ImageEnhance.Color(img).enhance(1.12)
+
+    # 2) 따뜻한 톤 오버레이
+    warm = Image.new("RGB", img.size, (255, 216, 194))  # #FFD8C2
+    img = Image.blend(img, warm, alpha=0.08)
+
+    # 3) 비네팅
+    w, h = img.size
+    y, x = np.ogrid[:h, :w]
+    cx, cy = w / 2, h / 2
+    r = np.sqrt((x - cx) ** 2 + (y - cy) ** 2)
+    max_r = np.sqrt(cx ** 2 + cy ** 2)
+    mask_arr = (1.0 - (r / max_r)) ** 1.5
+    mask_arr = np.clip(mask_arr * 255, 0, 255).astype(np.uint8)
+    vignette = Image.fromarray(mask_arr, mode="L")
+    dark = Image.new("RGB", (w, h), (0, 0, 0))
+    img = Image.composite(img, Image.blend(img, dark, 0.18), ImageOps.invert(vignette))
+
+    # 4) 소프트 글로우
+    blur = img.filter(ImageFilter.GaussianBlur(radius=2.0))
+    img = Image.blend(img, blur, alpha=0.12)
+
+    # 5) 엽서 느낌의 옅은 테두리
+    border = 10
+    framed = Image.new("RGB", (w + border * 2, h + border * 2), (243, 226, 216))  # #F3E2D8
+    framed.paste(img, (border, border))
+    framed.save(out_path, format="PNG")
+
+# -------------------- OpenAI 변환 (+403 폴백) --------------------
+def ai_convert_cute_memorial(img_path: str, out_path: str, engine_choice: str):
+    """
+    engine_choice:
+      - "OpenAI 고급 변환" → OpenAI 시도 후 403/접근 문제 시 로컬 폴백
+      - "로컬 보정(대체)"   → 바로 로컬 보정
+    """
+    # 로컬 강제 선택 시
+    if engine_choice == "로컬 보정(대체)":
+        local_memorial_filter(img_path, out_path)
+        return
+
+    # OpenAI 시도
+    if client is None:
+        # 키 미설정/클라이언트 불가 → 로컬 폴백
+        local_memorial_filter(img_path, out_path)
+        return
+
+    prompt = (
+        "반려동물 추모 사진 스타일. 따뜻하고 밝은 색감, 은은한 보케, "
+        "부드러운 비네팅, 과하지 않은 화사함, 엽서 느낌."
+    )
+    try:
+        with open(img_path, "rb") as f:
+            resp = client.images.edit(
+                model="gpt-image-1",
+                image=f,
+                prompt=prompt,
+                size="1024x1024",  # 최신 지원 사이즈
+            )
+        b64_img = resp.data[0].b64_json
+        img_bytes = base64.b64decode(b64_img)
+        with open(out_path, "wb") as out:
+            out.write(img_bytes)
+    except Exception as e:
+        msg = str(e)
+        # 조직 인증 미완료/권한 문제면 자동 폴백
+        if ("403" in msg) or ("must be verified" in msg) or ("access" in msg.lower()):
+            local_memorial_filter(img_path, out_path)
+        else:
+            raise
 
 # -------------------- 스타일 --------------------
 st.markdown("""
@@ -216,6 +294,27 @@ if st.sidebar.button("저장하기"):
         }, f, ensure_ascii=False, indent=2)
     st.sidebar.success("저장 완료!")
     st.rerun()
+
+# 변환 엔진 선택 (OpenAI/로컬)
+st.sidebar.markdown("---")
+st.sidebar.subheader("🛠 변환 엔진")
+engine = st.sidebar.radio(
+    "사용할 엔진을 선택하세요",
+    ["OpenAI 고급 변환", "로컬 보정(대체)"],
+    index=0 if ai_available() else 1,
+)
+# (선택) 현재 키 지문 표시 & 간단 연결 테스트
+if OPENAI_API_KEY:
+    masked = OPENAI_API_KEY[:7] + "..." + OPENAI_API_KEY[-4:]
+    st.sidebar.caption(f"키 지문: {masked}")
+if st.sidebar.button("OpenAI 연결 테스트"):
+    try:
+        if not ai_available():
+            raise RuntimeError("클라이언트가 준비되지 않았어요. OPENAI_API_KEY 확인.")
+        _ = client.models.list()
+        st.sidebar.success("✅ 연결 OK")
+    except Exception as e:
+        st.sidebar.error(f"❌ 연결 실패: {e}")
 
 # -------------------- 히어로 --------------------
 try:
@@ -379,8 +478,8 @@ with tab1:
 
     # 전체 일괄 변환 버튼
     st.caption("💡 ‘모두 AI 변환’을 누르면 업로드된 원본 중 아직 변환본이 없는 사진만 변환합니다.")
-    if client is None:
-        st.button("모두 AI 변환", disabled=True, help="OPENAI_API_KEY 설정 필요")
+    if client is None and engine == "OpenAI 고급 변환":
+        st.button("모두 AI 변환", disabled=True, help="OPENAI_API_KEY 설정 필요 또는 엔진을 '로컬 보정'으로 전환하세요.")
     else:
         if st.button("모두 AI 변환"):
             try:
@@ -394,14 +493,14 @@ with tab1:
                         continue
                     in_path = os.path.join(UPLOAD_FOLDER, img_file)
                     out_path = os.path.join(CONVERTED_FOLDER, out_name)
-                    ai_convert_cute_memorial(in_path, out_path)
+                    ai_convert_cute_memorial(in_path, out_path, engine_choice=engine)
                     done += 1
                 st.success(f"변환 완료: {done}장 (이미 변환되어 건너뜀: {skipped}장)")
                 st.rerun()
             except Exception as e:
                 msg = str(e)
-                if "401" in msg or "invalid_api_key" in msg or "Incorrect API key" in msg:
-                    st.error("❌ 인증 실패: API 키가 올바른지 확인하세요. (Secrets 재저장/재발급 권장)")
+                if "403" in msg or "must be verified" in msg:
+                    st.error("❌ OpenAI 이미지 편집은 조직 인증이 필요합니다. 지금은 로컬 보정으로 이용해 주세요.")
                 else:
                     st.error(f"일괄 변환 실패: {e}")
 
@@ -427,23 +526,16 @@ with tab1:
                         """,
                         unsafe_allow_html=True
                     )
-                    # 액션 버튼
                     b1, b2 = st.columns(2)
                     with b1:
-                        if client is not None:
-                            if st.button("AI 변환", key=f"convert_{idx}"):
-                                try:
-                                    out_path = os.path.join(CONVERTED_FOLDER, f"converted_{img_file}")
-                                    ai_convert_cute_memorial(img_path, out_path)
-                                    st.success("변환 완료! 위 캐러셀에서도 볼 수 있어요.")
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"변환 실패: {e}")
-                        else:
-                            if not OPENAI_API_KEY:
-                                st.caption("⚠️ OPENAI_API_KEY 필요")
-                            elif openai_import_error:
-                                st.caption("⚠️ openai>=1.0.0 설치 필요")
+                        if st.button("AI 변환", key=f"convert_{idx}"):
+                            try:
+                                out_path = os.path.join(CONVERTED_FOLDER, f"converted_{img_file}")
+                                ai_convert_cute_memorial(img_path, out_path, engine_choice=engine)
+                                st.success("변환 완료! 위 캐러셀에서도 볼 수 있어요.")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"변환 실패: {e}")
                     with b2:
                         if st.button("삭제", key=f"delete_{idx}"):
                             ok1 = safe_remove(img_path)
