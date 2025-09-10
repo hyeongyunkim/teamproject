@@ -491,15 +491,3 @@ with tab2:
         f"<div style='text-align:center;'><iframe width='560' height='315' src='{video_url}' frameborder='0' allowfullscreen></iframe></div>",
         unsafe_allow_html=True
     )
-
-# ====== 탭3: 기부/꽃바구니 ======
-with tab3:
-    st.markdown('<div class="page-wrap">', unsafe_allow_html=True)
-    st.header("💐 조문객 기부 / 꽃바구니 주문")
-    st.markdown("- 💳 기부: 카카오페이 / 토스 / 계좌이체 가능\n- 🌹 꽃바구니 주문: 온라인 꽃집 링크 연결")
-    link = st.text_input("꽃바구니 주문 링크", "https://www.naver.com")
-    st.markdown(
-        f"<div style='text-align:center;'><a href='{link}' target='_blank' "
-        f"style='font-size:18px; color:#CFA18D; font-weight:bold;'>👉 꽃바구니 주문하러 가기</a></div>",
-        unsafe_allow_html=True
-    )
