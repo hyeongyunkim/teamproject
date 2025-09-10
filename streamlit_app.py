@@ -7,10 +7,6 @@ from datetime import datetime
 import html
 import json
 
-# --- 로컬 지브리 변환용 ---
-import numpy as np
-from PIL import Image, ImageFilter, ImageEnhance, ImageOps, ImageChops
-
 # -------------------- 기본 설정 --------------------
 st.set_page_config(page_title="반려동물 추모관", page_icon="🐾", layout="wide")
 
@@ -38,7 +34,7 @@ client = None
 openai_import_error = None
 if OPENAI_API_KEY:
     try:
-        from openai import OpenAI  # pip install openai
+        from openai import OpenAI  # pip install openai>=1.0.0
         client = OpenAI(api_key=OPENAI_API_KEY)
     except Exception as e:
         openai_import_error = e
@@ -89,122 +85,36 @@ def safe_remove(path: str) -> bool:
     except Exception:
         return False
 
-# 대용량 이미지 자동 리사이즈 (변환 전)
-def maybe_resize(path: str, max_side=1600):
-    try:
-        img = Image.open(path).convert("RGB")
-        w, h = img.size
-        if max(w, h) > max_side:
-            scale = max_side / max(w, h)
-            img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
-            img.save(path)  # 덮어쓰기
-    except Exception:
-        pass
+# -------------------- OpenAI 애니메이션 셀풍 변환 --------------------
+ANIME_PROMPT = (
+    "Anime-style illustration of a pet memorial photo. Bright, clean colors; "
+    "thin crisp black outlines; cel shading with minimal gradients; gentle depth-of-field; "
+    "expressive eyes; warm cheerful tone. Not watercolor, not painterly, not photo-like."
+)
 
-# -------------------- 빠른 지브리풍 로컬 변환 --------------------
-def local_ghibli_filter(in_path: str, out_path: str,
-                        *, posterize_bits=3, edge_blur=0, glow=1.4, palette_colors=28):
+def ai_convert_anime_style(img_path: str, out_path: str):
     """
-    지브리풍(강화):
-    - 더 과감한 색 축소(Posterize 3bit + Adaptive Quantize)
-    - 두꺼운 윤곽선(에지 강조 + 팻화) 두 번 합성
-    - 파스텔/따뜻한 톤 + 소프트 글로우 + 약간의 필름 그레인
-    - 순수 Pillow 연산으로 빠르게 동작
+    OpenAI gpt-image-1 로 '애니메이션 셀풍'으로 변환.
+    로컬 폴백 없이, 실패하면 예외를 그대로 띄웁니다.
     """
-    # 0) 로드
-    img = Image.open(in_path).convert("RGB")
-    w, h = img.size
-
-    # 1) 기본 정리(노이즈/톤)
-    base = img.filter(ImageFilter.MedianFilter(3))
-    # 살짝 소프트한 느낌 + 포토스러운 과한 채도/명암 줄이기
-    base = ImageEnhance.Color(base).enhance(0.95)
-    base = ImageEnhance.Contrast(base).enhance(0.95)
-    base = ImageEnhance.Brightness(base).enhance(1.03)
-
-    # 2) 색 단계 확 줄이기 (만화 느낌 강화)
-    base = ImageOps.posterize(base, bits=posterize_bits)  # 3bit = 8단계/채널
-    # Adaptive 팔레트로 추가 축소(팔레트 기반, 더 만화 톤)
-    base = base.convert("P", palette=Image.ADAPTIVE, colors=palette_colors).convert("RGB")
-
-    # 3) 윤곽선 만들기 (두껍고 또렷하게)
-    edge = img.convert("L").filter(ImageFilter.FIND_EDGES)
-    if edge_blur > 0:
-        edge = edge.filter(ImageFilter.GaussianBlur(edge_blur))
-    # 선 농도 극대화
-    edge = ImageEnhance.Contrast(edge).enhance(3.0)
-    edge = ImageEnhance.Brightness(edge).enhance(0.35)     # 어둡게 → 검은 선
-    # 선을 더 두껍게 (min/max filter로 팻화)
-    edge = edge.filter(ImageFilter.MinFilter(3))            # 두께 ↑
-    # 흑선으로 변환
-    edge_rgb = ImageOps.invert(edge).convert("RGB")
-
-    # 4) 윤곽선 두 번 Multiply (라인감 강화)
-    merged = ImageChops.multiply(base, edge_rgb)
-    merged = ImageChops.multiply(merged, edge_rgb)
-
-    # 5) 파스텔/따뜻한 톤
-    merged = ImageEnhance.Color(merged).enhance(1.06)
-    warm = Image.new("RGB", merged.size, (255, 228, 204))  # 부드러운 살구색
-    merged = Image.blend(merged, warm, alpha=0.07)
-
-    # 6) 소프트 글로우
-    if glow > 0:
-        blur = merged.filter(ImageFilter.GaussianBlur(radius=glow))
-        merged = Image.blend(merged, blur, alpha=0.12)
-
-    # 7) 아주 약한 필름 그레인(플랫함 방지)
-    try:
-        import numpy as _np
-        arr = _np.array(merged).astype(_np.float32)
-        noise = _np.random.normal(0, 6, size=arr.shape).astype(_np.float32)  # 표준편차 6
-        arr = _np.clip(arr + noise, 0, 255).astype(_np.uint8)
-        merged = Image.fromarray(arr, mode="RGB")
-    except Exception:
-        pass
-
-    # 8) 엽서 느낌 테두리
-    border = 10
-    framed = Image.new("RGB", (w + border*2, h + border*2), (243, 226, 216))  # #F3E2D8
-    framed.paste(merged, (border, border))
-    framed.save(out_path, format="PNG")
-
-# -------------------- AI 지브리 변환 (OpenAI 시도→403/키없음 시 로컬 폴백) --------------------
-def ai_convert_cute_memorial(img_path: str, out_path: str):
-    """
-    고정 지브리풍:
-      - OpenAI(gpt-image-1) 편집 지브리 프롬프트 시도
-      - 403/권한 문제 또는 키 미설정/클라이언트 실패면 로컬 지브리 폴백
-    """
-    # 키/클라이언트 없으면 바로 로컬
     if client is None:
-        local_ghibli_filter(img_path, out_path)
-        return
+        if not OPENAI_API_KEY:
+            raise RuntimeError("OPENAI_API_KEY가 설정되어 있지 않습니다.")
+        if openai_import_error:
+            raise RuntimeError(f"openai 라이브러리 문제: {openai_import_error}")
+        raise RuntimeError("OpenAI 클라이언트 초기화 실패")
 
-    prompt = (
-        "Studio Ghibli style, hand-painted watercolor background, soft cel-shading, "
-        "warm pastel palette, gentle bloom, subtle film grain, clean black outlines, "
-        "storybook illustration look. Keep subject cute and serene."
-    )
-    try:
-        with open(img_path, "rb") as f:
-            resp = client.images.edit(
-                model="gpt-image-1",
-                image=f,
-                prompt=prompt,
-                size="1024x1024",
-            )
-        b64_img = resp.data[0].b64_json
-        img_bytes = base64.b64decode(b64_img)
-        with open(out_path, "wb") as out:
-            out.write(img_bytes)
-    except Exception as e:
-        msg = str(e)
-        # 조직 인증/권한 문제 등은 자동 폴백
-        if ("403" in msg) or ("must be verified" in msg) or ("access" in msg.lower()):
-            local_ghibli_filter(img_path, out_path)
-        else:
-            raise
+    with open(img_path, "rb") as f:
+        resp = client.images.edit(
+            model="gpt-image-1",
+            image=f,
+            prompt=ANIME_PROMPT,
+            size="auto",  # 비율 유지. 필요시 '1024x1024', '1024x1536', '1536x1024' 중 선택 가능
+        )
+    b64_img = resp.data[0].b64_json
+    img_bytes = base64.b64decode(b64_img)
+    with open(out_path, "wb") as out:
+        out.write(img_bytes)
 
 # -------------------- 스타일(CSS) --------------------
 st.markdown("""
@@ -279,15 +189,14 @@ if st.sidebar.button("저장하기"):
     st.sidebar.success("저장 완료!")
     st.rerun()
 
-# (임시) 진단 패널 - 필요 없으면 제거해도 됩니다
-with st.sidebar.expander("🔎 진단(임시)"):
-    st.write("OpenAI 클라이언트:", "OK" if client else "없음(로컬 지브리 사용)")
-    st.write("원본/변환 이미지 수:", len(list_uploaded_only()), len(list_converted_only()))
+# (진단) 사이드바에 최소 상태 표시
+with st.sidebar.expander("🔎 상태"):
+    st.write("OpenAI 클라이언트:", "OK" if client else ("오류" if openai_import_error else "없음"))
     if OPENAI_API_KEY:
         masked = OPENAI_API_KEY[:7] + "..." + OPENAI_API_KEY[-4:]
         st.caption(f"키 지문: {masked}")
     else:
-        st.caption("OpenAI 키 없음")
+        st.caption("OPENAI_API_KEY 미설정")
 
 # -------------------- 히어로 --------------------
 try:
@@ -422,7 +331,6 @@ with tab1:
                     real_idx = len(guest_lines) - 1 - idx
                     del guest_lines[real_idx]
                     with open("guestbook.txt", "w", encoding="utf-8") as f:
-                        st.write
                         f.writelines(guest_lines)
                     st.rerun()
     else:
@@ -450,8 +358,8 @@ with tab1:
         if dup: st.info(f"중복으로 제외된 사진: {dup}장")
         st.rerun()
 
-    # 모두 AI 변환 (지브리 고정 / OpenAI→403 시 로컬 지브리 폴백)
-    st.caption("💡 ‘모두 AI 변환’을 누르면 미변환 원본만 지브리풍으로 일괄 변환합니다.")
+    # 모두 AI 변환 (OpenAI 전용)
+    st.caption("💡 ‘모두 AI 변환’을 누르면 미변환 원본만 애니메이션 셀풍으로 일괄 변환합니다. (OpenAI 전용)")
     if st.button("모두 AI 변환"):
         try:
             originals_for_bulk = list_uploaded_only()
@@ -464,13 +372,18 @@ with tab1:
                     continue
                 in_path = os.path.join(UPLOAD_FOLDER, img_file)
                 out_path = os.path.join(CONVERTED_FOLDER, out_name)
-                maybe_resize(in_path, max_side=1600)
-                ai_convert_cute_memorial(in_path, out_path)
+                ai_convert_anime_style(in_path, out_path)
                 done += 1
             st.success(f"변환 완료: {done}장 (이미 변환되어 건너뜀: {skipped}장)")
             st.rerun()
         except Exception as e:
-            st.error(f"일괄 변환 실패: {e}")
+            msg = str(e)
+            if "401" in msg or "invalid_api_key" in msg or "Incorrect API key" in msg:
+                st.error("❌ 인증 실패: API 키가 올바른지 확인하세요. (Secrets/환경변수 재확인)")
+            elif "must be verified" in msg or "403" in msg:
+                st.error("❌ 조직 인증 필요: OpenAI 대시보드에서 Organization Verify 후 사용 가능합니다.")
+            else:
+                st.error(f"일괄 변환 실패: {e}")
 
     # 온라인 추모관 — 목록(3열 액자 그리드, 삭제/AI 변환)
     originals = list_uploaded_only()
@@ -496,15 +409,24 @@ with tab1:
                     )
                     b1, b2 = st.columns(2)
                     with b1:
-                        if st.button("AI 변환", key=f"convert_{idx}"):
-                            try:
-                                out_path = os.path.join(CONVERTED_FOLDER, f"converted_{img_file}")
-                                maybe_resize(img_path, max_side=1600)
-                                ai_convert_cute_memorial(img_path, out_path)
-                                st.success("변환 완료! 위 캐러셀에서도 볼 수 있어요.")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"변환 실패: {e}")
+                        # OpenAI 전용: 키/클라이언트 없으면 비활성화
+                        if client is None:
+                            st.button("AI 변환", key=f"convert_{idx}", disabled=True, help="OPENAI_API_KEY/조직 인증 필요")
+                        else:
+                            if st.button("AI 변환", key=f"convert_{idx}"):
+                                try:
+                                    out_path = os.path.join(CONVERTED_FOLDER, f"converted_{img_file}")
+                                    ai_convert_anime_style(img_path, out_path)
+                                    st.success("변환 완료! 위 캐러셀에서도 볼 수 있어요.")
+                                    st.rerun()
+                                except Exception as e:
+                                    msg = str(e)
+                                    if "401" in msg or "invalid_api_key" in msg or "Incorrect API key" in msg:
+                                        st.error("❌ 인증 실패: API 키가 올바른지 확인하세요.")
+                                    elif "must be verified" in msg or "403" in msg:
+                                        st.error("❌ 조직 인증 필요: OpenAI 대시보드에서 Organization Verify 후 사용 가능합니다.")
+                                    else:
+                                        st.error(f"변환 실패: {e}")
                     with b2:
                         if st.button("삭제", key=f"delete_{idx}"):
                             ok1 = safe_remove(img_path)
