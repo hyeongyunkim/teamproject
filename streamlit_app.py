@@ -85,25 +85,58 @@ def safe_remove(path: str) -> bool:
     except Exception:
         return False
 
-# -------------------- OpenAI: 만화책(코믹북) 스타일 변환 --------------------
-ANIME_PROMPT = (
-    "EXTREME comic-book / manga panel style illustration of a pet photo. "
-    "Bold, thick, clean black INKED outlines (hard lineart); "
-    "HARD two-tone cel shading with CLEAR shadow shapes; "
-    "HIGH-SATURATION FLAT colors; LIMITED color palette; "
-    "HALFTONE (screen-tone) dots in shadows/background; "
-    "crisp, vector-like shapes; high contrast; punchy look. "
-    "Background should be simple flat color or halftone pattern (no photo background). "
-    "Remove photographic detail and realistic textures. "
-    "NO gradients (or minimal), NO blur, NO soft focus, NO watercolor, "
-    "NO painterly style, NO photorealism, NO 3D, NOT a photo."
-)
+# -------------------- OpenAI: 개선된 애니메이션 스타일 변환 --------------------
+# 더 명확하고 구체적인 애니메이션 스타일 프롬프트들
+ANIME_STYLES = {
+    "cute_anime": {
+        "name": "귀여운 애니메이션",
+        "prompt": (
+            "Transform this pet photo into a cute Japanese anime/manga style illustration. "
+            "Features: Large expressive eyes with sparkles, soft rounded shapes, "
+            "bright vibrant colors, clean black outlines, cel-shading technique, "
+            "kawaii aesthetic, studio anime quality. "
+            "Remove photo background and replace with simple solid pastel color or cute pattern. "
+            "Make it look like a professional anime character design."
+        )
+    },
+    "disney_style": {
+        "name": "디즈니 애니메이션",
+        "prompt": (
+            "Convert this pet photo into Disney/Pixar 3D animation style. "
+            "Features: Expressive cartoon eyes, soft fur texture, warm lighting, "
+            "vibrant saturated colors, friendly expression, 3D rendered look but stylized, "
+            "professional animation studio quality. "
+            "Simple gradient background. Make it look like a Disney character."
+        )
+    },
+    "studio_ghibli": {
+        "name": "지브리 스타일",
+        "prompt": (
+            "Transform into Studio Ghibli anime art style. "
+            "Features: Soft watercolor-like textures, natural earth tones, "
+            "gentle expressions, detailed fur rendering, warm atmospheric lighting, "
+            "hand-drawn animation feel, whimsical and peaceful mood. "
+            "Simple nature-inspired background with soft colors."
+        )
+    },
+    "cartoon_portrait": {
+        "name": "카툰 초상화",
+        "prompt": (
+            "Create a professional cartoon portrait of this pet. "
+            "Features: Bold clean lines, flat bright colors, simplified shapes, "
+            "exaggerated cute features, vector art style, "
+            "high contrast, no shadows or gradients, "
+            "solid color background. Modern cartoon illustration style."
+        )
+    }
+}
 
-def ai_convert_anime_style(img_path: str, out_path: str):
+def ai_convert_anime_style(img_path: str, out_path: str, style_key: str = "cute_anime"):
     """
-    OpenAI gpt-image-1 로 '만화책/코믹북' 스타일로 강하게 변환합니다.
-    - 로컬 폴백 없음. 실패 시 예외를 그대로 UI에 표시합니다.
-    - 비율을 최대한 유지하려고 size='auto' 사용 (정사각 강제 원하면 '1024x1024'로 바꾸세요).
+    개선된 AI 애니메이션 변환 함수
+    - 여러 스타일 중 선택 가능
+    - 더 명확하고 구체적인 프롬프트 사용
+    - 고해상도 출력 설정
     """
     if client is None:
         if not OPENAI_API_KEY:
@@ -112,15 +145,21 @@ def ai_convert_anime_style(img_path: str, out_path: str):
             raise RuntimeError(f"openai 라이브러리 문제: {openai_import_error}")
         raise RuntimeError("OpenAI 클라이언트 초기화 실패")
 
+    style_info = ANIME_STYLES.get(style_key, ANIME_STYLES["cute_anime"])
+    prompt = style_info["prompt"]
+
     with open(img_path, "rb") as f:
         resp = client.images.edit(
             model="gpt-image-1",
             image=f,
-            prompt=ANIME_PROMPT,
-            size="auto",  # 필요시 '1024x1024'/'1024x1536'/'1536x1024' 중 택1
+            prompt=prompt,
+            size="1024x1024",  # 고정된 고해상도 사용
+            n=1
         )
+    
     b64_img = resp.data[0].b64_json
     img_bytes = base64.b64decode(b64_img)
+    
     with open(out_path, "wb") as out:
         out.write(img_bytes)
 
@@ -160,6 +199,7 @@ body { background-color: var(--bg); color: var(--ink); }
 .frame-edge{ background:#FFFFFF; border:1px solid var(--line); border-radius:12px; padding:8px; }
 .square-thumb{ width:100%; aspect-ratio:1/1; object-fit:cover; display:block; border-radius:10px; }
 .frame-meta{ color:#6C5149; font-size:12px; margin-top:8px; text-align:center; opacity:.9; }
+.style-selector{ background:#FFF4ED; border:1px solid var(--line); border-radius:12px; padding:12px; margin:10px 0; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -186,6 +226,15 @@ st.sidebar.title("📜 부고 정보 입력")
 pet_name = st.sidebar.text_input("반려동물 이름", value=default_name)
 birth_date = st.sidebar.date_input("태어난 날", value=default_birth)
 pass_date = st.sidebar.date_input("무지개다리 건넌 날", value=default_pass)
+
+# 애니메이션 스타일 선택
+st.sidebar.title("🎨 AI 변환 스타일")
+selected_style = st.sidebar.selectbox(
+    "변환할 애니메이션 스타일을 선택하세요",
+    options=list(ANIME_STYLES.keys()),
+    format_func=lambda x: ANIME_STYLES[x]["name"],
+    index=0
+)
 
 if st.sidebar.button("저장하기"):
     with open(INFO_PATH, "w", encoding="utf-8") as f:
@@ -271,7 +320,7 @@ with tab1:
             if st.button("▶", key="carousel_next"):
                 st.session_state.carousel_idx = (st.session_state.carousel_idx + 1) % n
     else:
-        st.info("아직 변환된 사진이 없습니다. 아래 ‘온라인 추모관’에서 업로드 후 ‘AI 변환’ 또는 ‘모두 AI 변환’을 눌러 주세요.")
+        st.info("아직 변환된 사진이 없습니다. 아래 '온라인 추모관'에서 업로드 후 'AI 변환' 또는 '모두 AI 변환'을 눌러 주세요.")
 
     # 부고장
     st.subheader("📜 부고장")
@@ -346,6 +395,15 @@ with tab1:
 
     # 온라인 추모관 — 업로드
     st.subheader("🖼️ 온라인 추모관")
+    
+    # 스타일 정보 표시
+    st.markdown(f"""
+    <div class="style-selector">
+        <strong>🎨 현재 선택된 스타일:</strong> {ANIME_STYLES[selected_style]["name"]}<br>
+        <small>사이드바에서 다른 스타일로 변경할 수 있습니다.</small>
+    </div>
+    """, unsafe_allow_html=True)
+    
     with st.form("gallery_upload", clear_on_submit=True):
         uploaded_files = st.file_uploader("사진 업로드", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
         submit = st.form_submit_button("업로드")
@@ -366,23 +424,35 @@ with tab1:
         if dup: st.info(f"중복으로 제외된 사진: {dup}장")
         st.rerun()
 
-    # 모두 AI 변환 (OpenAI 전용)
-    st.caption("💡 ‘모두 AI 변환’을 누르면 미변환 원본만 강한 만화책 스타일로 일괄 변환합니다. (OpenAI 전용)")
+    # 모두 AI 변환 (개선된 스타일 적용)
+    st.caption(f"💡 '모두 AI 변환'을 누르면 미변환 원본을 선택된 스타일({ANIME_STYLES[selected_style]['name']})로 일괄 변환합니다.")
     if st.button("모두 AI 변환"):
         try:
             originals_for_bulk = list_uploaded_only()
             converted_names = set(os.listdir(CONVERTED_FOLDER)) if os.path.exists(CONVERTED_FOLDER) else set()
             done, skipped = 0, 0
-            for img_file in originals_for_bulk:
+            
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            for i, img_file in enumerate(originals_for_bulk):
                 out_name = f"converted_{img_file}"
                 if out_name in converted_names:
                     skipped += 1
                     continue
+                
+                status_text.text(f"변환 중... ({i+1}/{len(originals_for_bulk)}) - {img_file}")
+                
                 in_path = os.path.join(UPLOAD_FOLDER, img_file)
                 out_path = os.path.join(CONVERTED_FOLDER, out_name)
-                ai_convert_anime_style(in_path, out_path)
+                ai_convert_anime_style(in_path, out_path, selected_style)
                 done += 1
-            st.success(f"변환 완료: {done}장 (이미 변환되어 건너뜀: {skipped}장)")
+                
+                progress_bar.progress((i + 1) / len(originals_for_bulk))
+            
+            progress_bar.empty()
+            status_text.empty()
+            st.success(f"✨ 변환 완료: {done}장 (이미 변환되어 건너뜀: {skipped}장)")
             st.rerun()
         except Exception as e:
             msg = str(e)
@@ -422,10 +492,11 @@ with tab1:
                         else:
                             if st.button("AI 변환", key=f"convert_{idx}"):
                                 try:
-                                    out_path = os.path.join(CONVERTED_FOLDER, f"converted_{img_file}")
-                                    ai_convert_anime_style(img_path, out_path)
-                                    st.success("변환 완료! 위 캐러셀에서도 볼 수 있어요.")
-                                    st.rerun()
+                                    with st.spinner(f"{ANIME_STYLES[selected_style]['name']} 스타일로 변환 중..."):
+                                        out_path = os.path.join(CONVERTED_FOLDER, f"converted_{img_file}")
+                                        ai_convert_anime_style(img_path, out_path, selected_style)
+                                        st.success("✨ 변환 완료! 위 캐러셀에서 확인하세요.")
+                                        st.rerun()
                                 except Exception as e:
                                     msg = str(e)
                                     if "401" in msg or "invalid_api_key" in msg or "Incorrect API key" in msg:
