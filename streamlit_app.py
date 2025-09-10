@@ -103,48 +103,69 @@ def maybe_resize(path: str, max_side=1600):
 
 # -------------------- 빠른 지브리풍 로컬 변환 --------------------
 def local_ghibli_filter(in_path: str, out_path: str,
-                        *, posterize_bits=4, edge_blur=1, glow=1.3):
+                        *, posterize_bits=3, edge_blur=0, glow=1.4, palette_colors=28):
     """
-    빠른 지브리풍:
-    - 포스터라이즈(색 단계 축소)
-    - FIND_EDGES 기반 윤곽선 추출 후 농도 보정
-    - 파스텔/따뜻한 톤 + 소프트 글로우
-    - 순수 Pillow 연산(루프 없음)이라 속도 빠름
+    지브리풍(강화):
+    - 더 과감한 색 축소(Posterize 3bit + Adaptive Quantize)
+    - 두꺼운 윤곽선(에지 강조 + 팻화) 두 번 합성
+    - 파스텔/따뜻한 톤 + 소프트 글로우 + 약간의 필름 그레인
+    - 순수 Pillow 연산으로 빠르게 동작
     """
+    # 0) 로드
     img = Image.open(in_path).convert("RGB")
     w, h = img.size
 
-    # 1) 부드럽게 + 채도/밝기 소폭 업
+    # 1) 기본 정리(노이즈/톤)
     base = img.filter(ImageFilter.MedianFilter(3))
-    base = ImageEnhance.Color(base).enhance(1.15)
-    base = ImageEnhance.Brightness(base).enhance(1.05)
+    # 살짝 소프트한 느낌 + 포토스러운 과한 채도/명암 줄이기
+    base = ImageEnhance.Color(base).enhance(0.95)
+    base = ImageEnhance.Contrast(base).enhance(0.95)
+    base = ImageEnhance.Brightness(base).enhance(1.03)
 
-    # 2) 포스터라이즈(만화 느낌)
-    base = ImageOps.posterize(base, bits=posterize_bits)
+    # 2) 색 단계 확 줄이기 (만화 느낌 강화)
+    base = ImageOps.posterize(base, bits=posterize_bits)  # 3bit = 8단계/채널
+    # Adaptive 팔레트로 추가 축소(팔레트 기반, 더 만화 톤)
+    base = base.convert("P", palette=Image.ADAPTIVE, colors=palette_colors).convert("RGB")
 
-    # 3) 윤곽선 (빠른 방식)
+    # 3) 윤곽선 만들기 (두껍고 또렷하게)
     edge = img.convert("L").filter(ImageFilter.FIND_EDGES)
     if edge_blur > 0:
         edge = edge.filter(ImageFilter.GaussianBlur(edge_blur))
-    # 선을 더 진하게: 밝기/대비 조절
-    edge = ImageEnhance.Contrast(edge).enhance(2.0)
-    edge = ImageEnhance.Brightness(edge).enhance(0.5)  # 어둡게 → 검은 선
-    edge_rgb = ImageOps.invert(edge).convert("RGB")     # 흑선
+    # 선 농도 극대화
+    edge = ImageEnhance.Contrast(edge).enhance(3.0)
+    edge = ImageEnhance.Brightness(edge).enhance(0.35)     # 어둡게 → 검은 선
+    # 선을 더 두껍게 (min/max filter로 팻화)
+    edge = edge.filter(ImageFilter.MinFilter(3))            # 두께 ↑
+    # 흑선으로 변환
+    edge_rgb = ImageOps.invert(edge).convert("RGB")
 
-    # 4) 윤곽선 Multiply 합성
+    # 4) 윤곽선 두 번 Multiply (라인감 강화)
     merged = ImageChops.multiply(base, edge_rgb)
+    merged = ImageChops.multiply(merged, edge_rgb)
 
-    # 5) 파스텔/따뜻한 톤 + 글로우
-    merged = ImageEnhance.Color(merged).enhance(1.08)
-    warm = Image.new("RGB", merged.size, (255, 230, 205))
-    merged = Image.blend(merged, warm, alpha=0.06)
+    # 5) 파스텔/따뜻한 톤
+    merged = ImageEnhance.Color(merged).enhance(1.06)
+    warm = Image.new("RGB", merged.size, (255, 228, 204))  # 부드러운 살구색
+    merged = Image.blend(merged, warm, alpha=0.07)
+
+    # 6) 소프트 글로우
     if glow > 0:
         blur = merged.filter(ImageFilter.GaussianBlur(radius=glow))
-        merged = Image.blend(merged, blur, alpha=0.10)
+        merged = Image.blend(merged, blur, alpha=0.12)
 
-    # 6) 엽서 느낌 테두리
-    border = 8
-    framed = Image.new("RGB", (w + border*2, h + border*2), (243, 226, 216))
+    # 7) 아주 약한 필름 그레인(플랫함 방지)
+    try:
+        import numpy as _np
+        arr = _np.array(merged).astype(_np.float32)
+        noise = _np.random.normal(0, 6, size=arr.shape).astype(_np.float32)  # 표준편차 6
+        arr = _np.clip(arr + noise, 0, 255).astype(_np.uint8)
+        merged = Image.fromarray(arr, mode="RGB")
+    except Exception:
+        pass
+
+    # 8) 엽서 느낌 테두리
+    border = 10
+    framed = Image.new("RGB", (w + border*2, h + border*2), (243, 226, 216))  # #F3E2D8
     framed.paste(merged, (border, border))
     framed.save(out_path, format="PNG")
 
