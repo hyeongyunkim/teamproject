@@ -228,6 +228,15 @@ body { background-color: var(--bg); color: var(--ink); }
 .frame-edge{ background:#FFFFFF; border:1px solid var(--line); border-radius:12px; padding:8px; }
 .square-thumb{ width:100%; aspect-ratio:1/1; object-fit:cover; display:block; border-radius:10px; }
 .frame-meta{ color:#6C5149; font-size:12px; margin-top:8px; text-align:center; opacity:.9; }
+
+/* ★ 버튼은 한 줄(줄바꿈 금지) + 동일 너비/높이 */
+.stButton > button {
+  white-space: nowrap;
+  width: 100%;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-weight: 700;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -326,7 +335,7 @@ with tab1:
 
     # 왼쪽 컨트롤
     with col_left:
-        if st.button("🌈 그리운 순간,\n그림으로", use_container_width=True):
+        if st.button("🌈 그리운 순간, 그림으로", use_container_width=True):
             if client is None:
                 st.error("❌ OpenAI 준비가 안 되었습니다. (OPENAI_API_KEY/조직 인증 확인)")
             else:
@@ -378,7 +387,7 @@ with tab1:
         st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
         if n > 0 and st.button("◀", key="carousel_prev", use_container_width=True):
             st.session_state.carousel_idx = (st.session_state.carousel_idx - 1) % n
-            st.rerun()  # ← experimental_rerun() 대신
+            st.rerun()
 
     # 가운데 이미지
     with col_mid:
@@ -414,7 +423,7 @@ with tab1:
 
     # 오른쪽 컨트롤
     with col_right:
-        if st.button("🖼️ 원본\n다시 보기", use_container_width=True):
+        if st.button("🖼️ 원본 다시 보기", use_container_width=True):
             if len(list_uploaded_paths()) == 0:
                 st.info("원본 사진이 없습니다. 먼저 업로드해 주세요.")
             else:
@@ -425,7 +434,7 @@ with tab1:
         st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
         if n > 0 and st.button("▶", key="carousel_next", use_container_width=True):
             st.session_state.carousel_idx = (st.session_state.carousel_idx + 1) % n
-            st.rerun()  # ← experimental_rerun() 대신
+            st.rerun()
 
     # 부고장
     st.subheader("📜 부고장")
