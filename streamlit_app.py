@@ -311,8 +311,7 @@ tab1, tab2 = st.tabs(["📜 부고장/방명록/추모관", "📺 장례식 스�
 
 # ====== 탭1 ======
 with tab1:
-    # === 상단 일괄 변환 버튼 ===
-    st.markdown("### 🚀 상단 일괄 AI 변환")
+    # === 상단 일괄 변환 버튼(제목 제거됨) ===
     if st.button("모든 미변환 원본을 '일본 TV 애니' 스타일로 변환하기"):
         if client is None:
             st.error("❌ OpenAI 준비가 안 되었습니다. (OPENAI_API_KEY/조직 인증 확인)")
