@@ -33,7 +33,6 @@ def load_api_key() -> str:
     return (key or "").strip()
 
 def load_org_id() -> str:
-    # 선택사항: secrets.toml 또는 환경변수에 OPENAI_ORG_ID 지정 가능 (권장)
     org = None
     try:
         org = st.secrets.get("OPENAI_ORG_ID")
@@ -90,9 +89,9 @@ def converted_stem(src_filename: str) -> str:
 def converted_png_name(src_filename: str) -> str:
     return converted_stem(src_filename) + ".png"
 
-# -------------------- 이미지 변환 (방법 A + 폴백) --------------------
+# -------------------- 이미지 변환 (애니풍 / variations 우선 + edit 폴백) --------------------
 def _save_temp_square_png(src_path: str, max_side: int = 1024) -> str:
-    """원본 비율 유지 + 흰 배경 정사각 캔버스(1024) PNG 임시 저장."""
+    """원본 비율 유지 + 흰 배경 정사각 캔버스(1024)에 합성하여 PNG 임시 저장."""
     with Image.open(src_path) as im:
         im = im.convert("RGBA")
         scale = min(max_side / im.width, max_side / im.height, 1.0)
@@ -110,21 +109,31 @@ def _save_temp_square_png(src_path: str, max_side: int = 1024) -> str:
     return t.name
 
 def _make_frame_mask_rgba(size: int = 1024, border: int = 24):
-    """images.edit 폴백용: 테두리(보존=불투명), 내부(편집=투명)"""
+    """images.edit 폴백용: 테두리(보존=불투명), 내부(편집=투명) 마스크"""
     m = Image.new("L", (size, size), 0)  # 0=편집
     d = ImageDraw.Draw(m)
-    # top/bottom/left/right 보존 테두리
-    d.rectangle([0, 0, size-1, border-1], fill=255)
-    d.rectangle([0, size-border, size-1, size-1], fill=255)
-    d.rectangle([0, border, border-1, size-border-1], fill=255)
-    d.rectangle([size-border, border, size-1, size-border-1], fill=255)
+    d.rectangle([0, 0, size-1, border-1], fill=255)                         # top
+    d.rectangle([0, size-border, size-1, size-1], fill=255)                 # bottom
+    d.rectangle([0, border, border-1, size-border-1], fill=255)             # left
+    d.rectangle([size-border, border, size-1, size-border-1], fill=255)     # right
     return m.convert("RGBA")
+
+# 일본 TV 애니 감성 프롬프트
+_ANIME_PROMPT = (
+    "High-quality Japanese TV anime illustration. Keep the SAME pose and composition as the input photo. "
+    "Clean cel shading with 2–3 tones per color, hard shadows with clear shapes, flat high-saturation palette. "
+    "Bold, clean black lineart with slight variable line weight (0.5–2.5px). "
+    "Cute expressive eyes (species-appropriate), small/simple nose & mouth, subtle fur tufts and inner line details. "
+    "Anime highlights on eyes/fur, crisp edges. "
+    "Simple background without gradients: plain color, halftone dots, or speed lines. "
+    "No photo textures, no blur, no noise, no text, no watermark, not photorealistic."
+)
 
 def ai_redraw_comic_style(img_path: str, out_path: str):
     """
-    기본: images.variations로 원본 포즈/구도 보존하며 만화풍 변형.
-    폴백: images.edit(+프레임 마스크)로 재그리기.
-    출력: .png로 강제 저장.
+    기본: images.variations로 원본 포즈/구도 보존하며 '일본 TV 애니' 스타일 변형.
+    폴백: images.edit(+프레임 마스크)로 같은 스타일 재그리기.
+    출력: .png로 저장.
     """
     if client is None:
         raise RuntimeError("OpenAI 클라이언트가 준비되지 않았습니다. (OPENAI_API_KEY/조직 인증 확인)")
@@ -137,7 +146,7 @@ def ai_redraw_comic_style(img_path: str, out_path: str):
     try:
         tmp_img = _save_temp_square_png(img_path, max_side=1024)
 
-        # 1) variations 시도
+        # 1) variations 우선 시도 (원본 구도/실루엣 보존에 유리)
         try:
             with open(tmp_img, "rb") as f_img:
                 try:
@@ -146,16 +155,10 @@ def ai_redraw_comic_style(img_path: str, out_path: str):
                         image=f_img,
                         n=1,
                         size="1024x1024",
-                        prompt=(
-                            "Stylize the variation into bold manga/comic style. "
-                            "Keep the same pose and composition as the input photo. "
-                            "Thick clean black lineart; 2–3 tone cel shading; "
-                            "flat high-saturation colors; halftone screen tones; "
-                            "simple background; no photo textures; no gradients."
-                        ),
+                        prompt=_ANIME_PROMPT,
                     )
                 except Exception:
-                    # prompt 미지원 환경 → 프롬프트 없이 변형
+                    # 일부 환경에서 variations가 prompt 인자를 거부 → 프롬프트 없이 변형
                     f_img.seek(0)
                     resp = client.images.variations(
                         model="gpt-image-1",
@@ -164,7 +167,7 @@ def ai_redraw_comic_style(img_path: str, out_path: str):
                         size="1024x1024",
                     )
         except Exception:
-            # 2) 폴백: edit + 프레임 마스크
+            # 2) 폴백: edit + 프레임 마스크(프레이밍 유지)
             mask = _make_frame_mask_rgba(size=1024, border=24)
             tmask = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
             mask.save(tmask.name, "PNG")
@@ -176,17 +179,12 @@ def ai_redraw_comic_style(img_path: str, out_path: str):
                     image=f_img,
                     mask=f_mask,
                     size="1024x1024",
-                    prompt=(
-                        "Re-illustrate the photo inside the frame in bold manga/comic style. "
-                        "Preserve the pose and composition. Thick black lineart; 2–3 tone cel "
-                        "shading; flat high-saturation colors; halftone; simple background; "
-                        "no photo textures; no gradients."
-                    ),
+                    prompt=_ANIME_PROMPT,
                 )
 
+        # 결과 저장
         b64_img = resp.data[0].b64_json
         img_bytes = base64.b64decode(b64_img)
-        os.makedirs(CONVERTED_FOLDER, exist_ok=True)
         with open(out_path, "wb") as out:
             out.write(img_bytes)
 
@@ -315,7 +313,7 @@ tab1, tab2 = st.tabs(["📜 부고장/방명록/추모관", "📺 장례식 스�
 with tab1:
     # === 상단 일괄 변환 버튼 ===
     st.markdown("### 🚀 상단 일괄 AI 변환")
-    if st.button("모든 미변환 원본을 만화풍으로 변환하기"):
+    if st.button("모든 미변환 원본을 '일본 TV 애니' 스타일로 변환하기"):
         if client is None:
             st.error("❌ OpenAI 준비가 안 되었습니다. (OPENAI_API_KEY/조직 인증 확인)")
         else:
@@ -344,7 +342,6 @@ with tab1:
                             success += 1
                         except Exception as e:
                             msg = str(e)
-                            # 403/Verify 친화 안내
                             if "must be verified" in msg or "403" in msg:
                                 msg = ("이미지 모델 접근 권한(조직 Verify/결제)이 필요합니다. "
                                        "https://platform.openai.com/settings/organization/general 에서 인증 후 재시도하세요.")
