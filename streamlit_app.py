@@ -64,7 +64,6 @@ def list_uploaded_only():
                    if f.lower().endswith((".png", ".jpg", ".jpeg"))])
 
 def list_uploaded_paths():
-    """업로드 원본의 절대경로 리스트 (최신순)"""
     if not os.path.exists(UPLOAD_FOLDER):
         return []
     paths = [os.path.join(UPLOAD_FOLDER, f)
@@ -74,7 +73,6 @@ def list_uploaded_paths():
     return paths
 
 def list_converted_only():
-    """변환본: PNG/JPG 모두, 최신순 정렬"""
     if not os.path.exists(CONVERTED_FOLDER):
         return []
     files = []
@@ -99,9 +97,18 @@ def converted_stem(src_filename: str) -> str:
 def converted_png_name(src_filename: str) -> str:
     return converted_stem(src_filename) + ".png"
 
-# -------------------- 이미지 변환 (애니풍 / variations 우선 + edit 폴백) --------------------
+# -------------------- 이미지 변환 --------------------
+_ANIME_PROMPT = (
+    "High-quality Japanese TV anime illustration. Keep the SAME pose and composition as the input photo. "
+    "Clean cel shading with 2–3 tones per color, hard shadows with clear shapes, flat high-saturation palette. "
+    "Bold, clean black lineart with slight variable line weight (0.5–2.5px). "
+    "Cute expressive eyes (species-appropriate), small/simple nose & mouth, subtle fur tufts and inner line details. "
+    "Anime highlights on eyes/fur, crisp edges. "
+    "Simple background without gradients: plain color, halftone dots, or speed lines. "
+    "No photo textures, no blur, no noise, no text, no watermark, not photorealistic."
+)
+
 def _save_temp_square_png(src_path: str, max_side: int = 1024) -> str:
-    """원본 비율 유지 + 흰 배경 정사각 캔버스(1024)에 합성하여 PNG 임시 저장."""
     with Image.open(src_path) as im:
         im = im.convert("RGBA")
         scale = min(max_side / im.width, max_side / im.height, 1.0)
@@ -119,7 +126,6 @@ def _save_temp_square_png(src_path: str, max_side: int = 1024) -> str:
     return t.name
 
 def _make_frame_mask_rgba(size: int = 1024, border: int = 24):
-    """images.edit 폴백용: 테두리(보존=불투명), 내부(편집=투명) 마스크"""
     m = Image.new("L", (size, size), 0)  # 0=편집
     d = ImageDraw.Draw(m)
     d.rectangle([0, 0, size-1, border-1], fill=255)                         # top
@@ -128,23 +134,7 @@ def _make_frame_mask_rgba(size: int = 1024, border: int = 24):
     d.rectangle([size-border, border, size-1, size-border-1], fill=255)     # right
     return m.convert("RGBA")
 
-# 일본 TV 애니 감성 프롬프트
-_ANIME_PROMPT = (
-    "High-quality Japanese TV anime illustration. Keep the SAME pose and composition as the input photo. "
-    "Clean cel shading with 2–3 tones per color, hard shadows with clear shapes, flat high-saturation palette. "
-    "Bold, clean black lineart with slight variable line weight (0.5–2.5px). "
-    "Cute expressive eyes (species-appropriate), small/simple nose & mouth, subtle fur tufts and inner line details. "
-    "Anime highlights on eyes/fur, crisp edges. "
-    "Simple background without gradients: plain color, halftone dots, or speed lines. "
-    "No photo textures, no blur, no noise, no text, no watermark, not photorealistic."
-)
-
 def ai_redraw_comic_style(img_path: str, out_path: str):
-    """
-    기본: images.variations로 원본 포즈/구도 보존하며 '일본 TV 애니' 스타일 변형.
-    폴백: images.edit(+프레임 마스크)로 같은 스타일 재그리기.
-    출력: .png로 저장.
-    """
     if client is None:
         raise RuntimeError("OpenAI 클라이언트가 준비되지 않았습니다. (OPENAI_API_KEY/조직 인증 확인)")
 
@@ -156,7 +146,7 @@ def ai_redraw_comic_style(img_path: str, out_path: str):
     try:
         tmp_img = _save_temp_square_png(img_path, max_side=1024)
 
-        # 1) variations 우선 시도
+        # 1) variations
         try:
             with open(tmp_img, "rb") as f_img:
                 try:
@@ -176,7 +166,7 @@ def ai_redraw_comic_style(img_path: str, out_path: str):
                         size="1024x1024",
                     )
         except Exception:
-            # 2) 폴백: edit + 프레임 마스크
+            # 2) fallback: edit + frame mask
             mask = _make_frame_mask_rgba(size=1024, border=24)
             tmask = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
             mask.save(tmask.name, "PNG")
@@ -191,7 +181,6 @@ def ai_redraw_comic_style(img_path: str, out_path: str):
                     prompt=_ANIME_PROMPT,
                 )
 
-        # 결과 저장
         b64_img = resp.data[0].b64_json
         img_bytes = base64.b64decode(b64_img)
         with open(out_path, "wb") as out:
@@ -320,15 +309,26 @@ tab1, tab2 = st.tabs(["📜 부고장/방명록/추모관", "📺 장례식 스�
 
 # ====== 탭1 ======
 with tab1:
-    # 캐러셀 모드 토글 상태 (False=원본, True=변환본)
     if "show_converted" not in st.session_state:
         st.session_state.show_converted = False
+    if "carousel_idx" not in st.session_state:
+        st.session_state.carousel_idx = 0
 
-    # === 상단 버튼 영역: 좌(변환) · 넓은 중앙 · 큰 스페이서 · 우(원본복귀) ===
-    col_left, col_mid, col_spacer, col_right = st.columns([1, 6, 8, 1])
+    # --- 데이터 소스 선택(원본/변환본) ---
+    converted_list = list_converted_only()
+    original_paths = list_uploaded_paths()
+    use_converted = st.session_state.show_converted and len(converted_list) > 0
+    carousel_src = converted_list if use_converted else original_paths
+    n = len(carousel_src)
+    st.session_state.carousel_idx = max(0, min(st.session_state.carousel_idx, max(n-1, 0)))
 
+    # === 컨트롤+이미지 3컬럼: [좌 컨트롤 | 이미지(가운데 정렬) | 우 컨트롤] ===
+    # 좌우를 아주 좁게(1) 두어 컨트롤이 이미지에 바짝 붙도록, 중앙은 크게(10)
+    col_left, col_mid, col_right = st.columns([1, 10, 1], gap="small")
+
+    # --- 왼쪽 컨트롤 (변환 버튼 + 이전 화살표) ---
     with col_left:
-        if st.button("🌈 그리운 순간, 그림으로"):
+        if st.button("🌈 그리운 순간,\n그림으로", use_container_width=True):
             if client is None:
                 st.error("❌ OpenAI 준비가 안 되었습니다. (OPENAI_API_KEY/조직 인증 확인)")
             else:
@@ -377,8 +377,47 @@ with tab1:
                             st.session_state.carousel_idx = 0
                             st.rerun()
 
+        st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+        if n > 0 and st.button("◀", key="carousel_prev", use_container_width=True):
+            st.session_state.carousel_idx = (st.session_state.carousel_idx - 1) % n
+            st.experimental_rerun()
+
+    # --- 가운데 이미지 (완전 중앙 정렬) ---
+    with col_mid:
+        st.markdown("<h2 style='text-align:center;'>In Loving Memory</h2>", unsafe_allow_html=True)
+
+        if n == 0:
+            if use_converted:
+                st.info("현재 표시할 변환 이미지가 없습니다. 먼저 사진을 업로드하고 변환을 진행해 주세요.")
+            else:
+                st.info("업로드된 원본 사진이 없습니다. 위에서 파일을 업로드하세요.")
+        else:
+            current = carousel_src[st.session_state.carousel_idx]
+            data_uri = img_file_to_data_uri(current)
+            badge = "변환본" if use_converted else "원본"
+            st.markdown(
+                f"<div style='text-align:center; color:#9B8F88; font-size:13px;'>({badge})</div>",
+                unsafe_allow_html=True
+            )
+            # 이미지 박스 중앙 정렬
+            st.markdown(
+                f"""
+                <div style="display:flex;justify-content:center;">
+                  <div class="photo-frame" style="width:720px;max-width:90vw;">
+                    <img class="thumb" src="{data_uri}" style="width:100%;display:block;border-radius:10px;">
+                  </div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+            st.markdown(
+                f"<p style='text-align:center;'><b>{st.session_state.carousel_idx+1}/{n}</b></p>",
+                unsafe_allow_html=True
+            )
+
+    # --- 오른쪽 컨트롤 (원본 보기 + 다음 화살표) ---
     with col_right:
-        if st.button("🖼️ 원본 다시 보기"):
+        if st.button("🖼️ 원본\n다시 보기", use_container_width=True):
             if len(list_uploaded_paths()) == 0:
                 st.info("원본 사진이 없습니다. 먼저 업로드해 주세요.")
             else:
@@ -386,51 +425,10 @@ with tab1:
                 st.session_state.carousel_idx = 0
                 st.rerun()
 
-    # --- 캐러셀 (원본/변환본 전환) ---
-    st.markdown("<h2 style='text-align:center;'>In Loving Memory</h2>", unsafe_allow_html=True)
-
-    converted_list = list_converted_only()     # 경로 리스트 (변환본)
-    original_paths = list_uploaded_paths()     # 경로 리스트 (원본)
-
-    use_converted = st.session_state.show_converted and len(converted_list) > 0
-    carousel_src = converted_list if use_converted else original_paths
-    n = len(carousel_src)
-
-    if "carousel_idx" not in st.session_state:
-        st.session_state.carousel_idx = 0
-    st.session_state.carousel_idx = max(0, min(st.session_state.carousel_idx, max(n-1, 0)))
-
-    if n == 0:
-        if use_converted:
-            st.info("현재 표시할 변환 이미지가 없습니다. 먼저 사진을 업로드하고 변환을 진행해 주세요.")
-        else:
-            st.info("업로드된 원본 사진이 없습니다. 위에서 파일을 업로드하세요.")
-    else:
-        # 4컬럼 배치: [이전 | 이미지 | 큰 스페이서 | 다음] → 오른쪽 화살표를 화면 끝에 가깝게
-        col_prev, col_img, col_space, col_next = st.columns([1, 6, 8, 1])
-
-        with col_prev:
-            if st.button("◀", key="carousel_prev"):
-                st.session_state.carousel_idx = (st.session_state.carousel_idx - 1) % n
-
-        with col_img:
-            current = carousel_src[st.session_state.carousel_idx]
-            data_uri = img_file_to_data_uri(current)
-            badge = "변환본" if use_converted else "원본"
-            st.markdown(f"<div style='text-align:center; color:#9B8F88; font-size:13px;'>({badge})</div>", unsafe_allow_html=True)
-            st.markdown(f"""
-            <div class="photo-frame" style="max-width:720px;margin:0 auto 10px;">
-                <img class="thumb" src="{data_uri}">
-            </div>
-            """, unsafe_allow_html=True)
-            st.markdown(
-                f"<p style='text-align:center;'><b>{st.session_state.carousel_idx+1}/{n}</b></p>",
-                unsafe_allow_html=True
-            )
-
-        with col_next:
-            if st.button("▶", key="carousel_next"):
-                st.session_state.carousel_idx = (st.session_state.carousel_idx + 1) % n
+        st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+        if n > 0 and st.button("▶", key="carousel_next", use_container_width=True):
+            st.session_state.carousel_idx = (st.session_state.carousel_idx + 1) % n
+            st.experimental_rerun()
 
     # 부고장
     st.subheader("📜 부고장")
@@ -543,7 +541,7 @@ with tab1:
             if errs:  st.warning(f"⚠️ 저장 중 오류: {errs}장")
             st.rerun()
 
-    # 업로드된 원본 미리보기 (3열 그리드)
+    # 업로드된 원본 미리보기
     originals = list_uploaded_only()
     if originals:
         st.caption(f"📂 업로드된 원본: {len(originals)}장")
