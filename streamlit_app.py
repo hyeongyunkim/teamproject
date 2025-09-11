@@ -156,7 +156,7 @@ def ai_redraw_comic_style(img_path: str, out_path: str):
     try:
         tmp_img = _save_temp_square_png(img_path, max_side=1024)
 
-        # 1) variations 우선 시도 (원본 구도/실루엣 보존에 유리)
+        # 1) variations 우선 시도
         try:
             with open(tmp_img, "rb") as f_img:
                 try:
@@ -168,7 +168,6 @@ def ai_redraw_comic_style(img_path: str, out_path: str):
                         prompt=_ANIME_PROMPT,
                     )
                 except Exception:
-                    # 일부 환경에서 variations가 prompt 인자를 거부 → 프롬프트 없이 변형
                     f_img.seek(0)
                     resp = client.images.variations(
                         model="gpt-image-1",
@@ -177,7 +176,7 @@ def ai_redraw_comic_style(img_path: str, out_path: str):
                         size="1024x1024",
                     )
         except Exception:
-            # 2) 폴백: edit + 프레임 마스크(프레이밍 유지)
+            # 2) 폴백: edit + 프레임 마스크
             mask = _make_frame_mask_rgba(size=1024, border=24)
             tmask = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
             mask.save(tmask.name, "PNG")
@@ -325,55 +324,65 @@ with tab1:
     if "show_converted" not in st.session_state:
         st.session_state.show_converted = False
 
-    # === 상단 일괄 변환 버튼 ===
-    if st.button("🌈 그리운 순간, 그림으로"):
-        if client is None:
-            st.error("❌ OpenAI 준비가 안 되었습니다. (OPENAI_API_KEY/조직 인증 확인)")
-        else:
-            originals = list_uploaded_only()
-            if not originals:
-                st.info("업로드된 원본 사진이 없습니다.")
+    # === 상단 버튼 영역: 변환 / 원본복귀 ===
+    b1, b2 = st.columns([1, 1])
+    with b1:
+        if st.button("🌈 그리운 순간, 그림으로"):
+            if client is None:
+                st.error("❌ OpenAI 준비가 안 되었습니다. (OPENAI_API_KEY/조직 인증 확인)")
             else:
-                existing_stems = {os.path.splitext(f)[0] for f in os.listdir(CONVERTED_FOLDER)}
-                to_convert = [fn for fn in originals if converted_stem(fn) not in existing_stems]
-
-                if not to_convert:
-                    st.info("변환할 원본이 없습니다. (모두 이미 변환됨)")
-                    st.session_state.show_converted = True  # 이미 변환되어 있으면 변환본 보기로
+                originals = list_uploaded_only()
+                if not originals:
+                    st.info("업로드된 원본 사진이 없습니다.")
                 else:
-                    progress = st.progress(0)
-                    status = st.empty()
-                    success = 0
-                    failures = []
-                    total = len(to_convert)
+                    existing_stems = {os.path.splitext(f)[0] for f in os.listdir(CONVERTED_FOLDER)}
+                    to_convert = [fn for fn in originals if converted_stem(fn) not in existing_stems]
 
-                    for i, fname in enumerate(to_convert, start=1):
-                        in_path = os.path.join(UPLOAD_FOLDER, fname)
-                        out_path = os.path.join(CONVERTED_FOLDER, converted_png_name(fname))
-                        try:
-                            status.write(f"변환 중 {i}/{total} : {html.escape(fname)}")
-                            ai_redraw_comic_style(in_path, out_path)
-                            success += 1
-                        except Exception as e:
-                            msg = str(e)
-                            if "must be verified" in msg or "403" in msg:
-                                msg = ("이미지 모델 접근 권한(조직 Verify/결제)이 필요합니다. "
-                                       "https://platform.openai.com/settings/organization/general 에서 인증 후 재시도하세요.")
-                            failures.append((fname, msg))
-                        finally:
-                            progress.progress(i / total)
-
-                    if success:
-                        st.success(f"✅ 변환 완료: {success}장")
+                    if not to_convert:
+                        st.info("변환할 원본이 없습니다. (모두 이미 변환됨)")
                         st.session_state.show_converted = True
-                    if failures:
-                        with st.expander(f"⚠️ 실패 {len(failures)}장 (자세히 보기)", expanded=True):
-                            for fn, msg in failures:
-                                st.error(f"{fn} → {msg}")
-                        st.info("실패가 있어 자동 새로고침을 하지 않았습니다. 오류 확인 후 다시 시도해 주세요.")
                     else:
-                        st.session_state.carousel_idx = 0
-                        st.rerun()
+                        progress = st.progress(0)
+                        status = st.empty()
+                        success = 0
+                        failures = []
+                        total = len(to_convert)
+
+                        for i, fname in enumerate(to_convert, start=1):
+                            in_path = os.path.join(UPLOAD_FOLDER, fname)
+                            out_path = os.path.join(CONVERTED_FOLDER, converted_png_name(fname))
+                            try:
+                                status.write(f"변환 중 {i}/{total} : {html.escape(fname)}")
+                                ai_redraw_comic_style(in_path, out_path)
+                                success += 1
+                            except Exception as e:
+                                msg = str(e)
+                                if "must be verified" in msg or "403" in msg:
+                                    msg = ("이미지 모델 접근 권한(조직 Verify/결제)이 필요합니다. "
+                                           "https://platform.openai.com/settings/organization/general 에서 인증 후 재시도하세요.")
+                                failures.append((fname, msg))
+                            finally:
+                                progress.progress(i / total)
+
+                        if success:
+                            st.success(f"✅ 변환 완료: {success}장")
+                            st.session_state.show_converted = True
+                        if failures:
+                            with st.expander(f"⚠️ 실패 {len(failures)}장 (자세히 보기)", expanded=True):
+                                for fn, msg in failures:
+                                    st.error(f"{fn} → {msg}")
+                            st.info("실패가 있어 자동 새로고침을 하지 않았습니다. 오류 확인 후 다시 시도해 주세요.")
+                        else:
+                            st.session_state.carousel_idx = 0
+                            st.rerun()
+    with b2:
+        if st.button("🖼️ 원본 다시 보기"):
+            if len(list_uploaded_paths()) == 0:
+                st.info("원본 사진이 없습니다. 먼저 업로드해 주세요.")
+            else:
+                st.session_state.show_converted = False
+                st.session_state.carousel_idx = 0
+                st.rerun()
 
     # --- 캐러셀 (원본/변환본 전환) ---
     st.markdown("<h2 style='text-align:center;'>In Loving Memory</h2>", unsafe_allow_html=True)
@@ -550,7 +559,6 @@ with tab1:
                         if st.button("삭제", key=f"del_origin_{i+j}"):
                             try:
                                 os.remove(path)
-                                # 변환본도 스템 기준으로 함께 제거
                                 stem = converted_stem(fname)
                                 for cf in list(os.listdir(CONVERTED_FOLDER)):
                                     if os.path.splitext(cf)[0] == stem:
