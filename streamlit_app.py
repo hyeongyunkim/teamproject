@@ -471,7 +471,6 @@ with tab1:
 
 # ====== 탭2: 스트리밍 ======
 with tab2:
-    st.markdown('<div class="page-wrap">', unsafe_allow_html=True)
     st.header("📺 장례식 실시간 스트리밍")
     video_url = st.text_input("YouTube 영상 URL 입력", "https://www.youtube.com/embed/dQw4w9WgXcQ")
     st.markdown(
