@@ -284,7 +284,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # -------------------- 탭 --------------------
-tab1, tab2, tab3 = st.tabs(["📜 부고장/방명록/추모관", "📺 장례식 스트리밍", "💐 기부/꽃바구니"])
+tab1, tab2 = st.tabs(["📜 부고장/방명록/추모관", "📺 장례식 스트리밍"])
 
 # ====== 탭1 ======
 with tab1:
@@ -318,7 +318,7 @@ with tab1:
             if st.button("▶", key="carousel_next"):
                 st.session_state.carousel_idx = (st.session_state.carousel_idx + 1) % n
     else:
-        st.info("아직 변환된 사진이 없습니다. 아래 ‘온라인 추모관’에서 업로드하면 자동 변환되어 캐러셀에 표시됩니다.")
+        st.info("아직 변환된 사진이 없습니다. 아래 '온라인 추모관'에서 업로드하면 자동 변환되어 캐러셀에 표시됩니다.")
 
     # 부고장
     st.subheader("📜 부고장")
@@ -424,7 +424,7 @@ with tab1:
         st.rerun()
 
     # 모두 AI 변환 (미변환 원본만 일괄 변환) — 안정화 버전
-    st.caption("💡 ‘모두 AI 변환’을 누르면 미변환 원본만 **만화책 리드로잉**으로 일괄 변환합니다. (OpenAI 전용)")
+    st.caption("💡 '모두 AI 변환'을 누르면 미변환 원본만 **만화책 리드로잉**으로 일괄 변환합니다. (OpenAI 전용)")
     if st.button("모두 AI 변환"):
         if client is None:
             st.error("❌ OpenAI가 준비되지 않았습니다. (Secrets/환경변수의 OPENAI_API_KEY와 조직 인증을 확인하세요.)")
@@ -476,17 +476,5 @@ with tab2:
     video_url = st.text_input("YouTube 영상 URL 입력", "https://www.youtube.com/embed/dQw4w9WgXcQ")
     st.markdown(
         f"<div style='text-align:center;'><iframe width='560' height='315' src='{video_url}' frameborder='0' allowfullscreen></iframe></div>",
-        unsafe_allow_html=True
-    )
-
-# ====== 탭3: 기부/꽃바구니 ======
-with tab3:
-    st.markdown('<div class="page-wrap">', unsafe_allow_html=True)
-    st.header("💐 조문객 기부 / 꽃바구니 주문")
-    st.markdown("- 💳 기부: 카카오페이 / 토스 / 계좌이체 가능\n- 🌹 꽃바구니 주문: 온라인 꽃집 링크 연결")
-    link = st.text_input("꽃바구니 주문 링크", "https://www.naver.com")
-    st.markdown(
-        f"<div style='text-align:center;'><a href='{link}' target='_blank' "
-        f"style='font-size:18px; color:#CFA18D; font-weight:bold;'>👉 꽃바구니 주문하러 가기</a></div>",
         unsafe_allow_html=True
     )
