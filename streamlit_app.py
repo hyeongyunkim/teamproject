@@ -55,19 +55,26 @@ def list_uploaded_only():
 def list_converted_only():
     if not os.path.exists(CONVERTED_FOLDER):
         return []
-    return sorted([
+    # 변환본은 규칙적으로 __converted.png 로 저장
+    files = [
         os.path.join(CONVERTED_FOLDER, f)
         for f in os.listdir(CONVERTED_FOLDER)
-        if f.lower().endswith((".png", ".jpg", ".jpeg"))
-    ])
+        if f.lower().endswith(".png")
+    ]
+    return sorted(files)
 
 def img_file_to_data_uri(path: str) -> str:
     mime, _ = mimetypes.guess_type(path)
     if mime is None:
-        mime = "image/jpeg"
+        mime = "image/png"
     with open(path, "rb") as f:
         b64 = base64.b64encode(f.read()).decode("utf-8")
     return f"data:{mime};base64,{b64}"
+
+# 변환본 파일명 규칙: <원본이름(확장자제외)>__converted.png
+def converted_png_name(src_filename: str) -> str:
+    base, _ = os.path.splitext(src_filename)
+    return f"{base}__converted.png"
 
 # -------------------- 강한 만화책 리드로잉 프롬프트 --------------------
 COMIC_PROMPT = (
@@ -87,7 +94,8 @@ def ai_redraw_comic_style(img_path: str, out_path: str):
     - 입력 이미지를 흑백 + 축소(최대 768)로 전처리 → 사진 질감 영향 최소화
     - 정사각 768 캔버스 중앙 정렬 (비율 보정)
     - 전영역 편집용 완전 투명 마스크 생성
-    - 마스크/이미지를 임시 PNG 파일로 저장해서 client.images.edit 호출 (안정성↑)
+    - 임시 PNG 파일로 OpenAI images.edit 호출
+    - out_path 확장자는 .png 로 강제
     """
     if client is None:
         if not OPENAI_API_KEY:
@@ -96,7 +104,11 @@ def ai_redraw_comic_style(img_path: str, out_path: str):
             raise RuntimeError(f"openai 라이브러리 문제: {openai_import_error}")
         raise RuntimeError("OpenAI 클라이언트 초기화 실패")
 
-    # 1) 입력 전처리: 흑백 + 축소(최대 768), 정사각 캔버스에 중앙 배치
+    # out_path를 png로 강제
+    if not out_path.lower().endswith(".png"):
+        out_path = os.path.splitext(out_path)[0] + ".png"
+
+    # 1) 입력 전처리
     with Image.open(img_path) as im:
         im = im.convert("L")  # grayscale
         im.thumbnail((768, 768), Image.LANCZOS)
@@ -106,13 +118,12 @@ def ai_redraw_comic_style(img_path: str, out_path: str):
         canvas.paste(im, (x, y))
         preprocessed = canvas.convert("RGBA")
 
-    # 2) 전영역 편집용 완전 투명 마스크 (768x768)
+    # 2) 전영역 편집용 완전 투명 마스크
     mask_img = Image.new("RGBA", (768, 768), (0, 0, 0, 0))
 
     tmp_img_path = None
     tmp_mask_path = None
     try:
-        # 임시 파일(PNG)로 저장
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as t_img:
             preprocessed.save(t_img.name, "PNG")
             tmp_img_path = t_img.name
@@ -121,7 +132,6 @@ def ai_redraw_comic_style(img_path: str, out_path: str):
             mask_img.save(t_mask.name, "PNG")
             tmp_mask_path = t_mask.name
 
-        # 3) OpenAI image edit
         with open(tmp_img_path, "rb") as f_img, open(tmp_mask_path, "rb") as f_mask:
             resp = client.images.edit(
                 model="gpt-image-1",
@@ -270,8 +280,16 @@ with tab1:
     if "carousel_idx" not in st.session_state:
         st.session_state.carousel_idx = 0
 
+    # ✅ 캐러셀 인덱스 범위 보정
+    if n == 0:
+        st.session_state.carousel_idx = 0
+    else:
+        if st.session_state.carousel_idx >= n:
+            st.session_state.carousel_idx = n - 1
+        if st.session_state.carousel_idx < 0:
+            st.session_state.carousel_idx = 0
+
     if n > 0:
-        st.session_state.carousel_idx %= n
         prev, mid, nxt = st.columns([1, 6, 1])
         with prev:
             if st.button("◀", key="carousel_prev"):
@@ -372,7 +390,7 @@ with tab1:
         uploaded_files = st.file_uploader(
             "사진 업로드 (PNG/JPG)", type=["png", "jpg", "jpeg"], accept_multiple_files=True
         )
-        submit_upload = st.form_submit_button("업로드")  # ✅ 업로드 전용 버튼
+        submit_upload = st.form_submit_button("업로드")  # 업로드 전용 버튼
 
     if submit_upload:
         if not uploaded_files:
@@ -435,7 +453,7 @@ with tab1:
                         if st.button("삭제", key=f"del_origin_{row_start+j}"):
                             try:
                                 os.remove(path)
-                                conv = os.path.join(CONVERTED_FOLDER, f"converted_{fname}")
+                                conv = os.path.join(CONVERTED_FOLDER, converted_png_name(fname))
                                 if os.path.exists(conv):
                                     os.remove(conv)
                                 st.success("삭제되었습니다.")
@@ -459,10 +477,14 @@ with tab1:
             if not originals_for_bulk:
                 st.info("업로드된 원본 사진이 없습니다.")
             else:
+                # 변환 전 캐러셀 길이 기록
+                n_before = len(list_converted_only())
+
+                # 이미 변환된 파일 제외
                 converted_names = set(os.listdir(CONVERTED_FOLDER)) if os.path.exists(CONVERTED_FOLDER) else set()
                 to_convert = []
                 for img_file in originals_for_bulk:
-                    out_name = f"converted_{img_file}"
+                    out_name = converted_png_name(img_file)
                     if out_name not in converted_names:
                         to_convert.append(img_file)
 
@@ -476,7 +498,7 @@ with tab1:
 
                     for i, img_file in enumerate(to_convert, start=1):
                         in_path  = os.path.join(UPLOAD_FOLDER, img_file)
-                        out_name = f"converted_{img_file}"
+                        out_name = converted_png_name(img_file)  # 규칙 적용
                         out_path = os.path.join(CONVERTED_FOLDER, out_name)
                         try:
                             status.write(f"변환 중 {i}/{total} : {html.escape(img_file)}")
@@ -492,6 +514,14 @@ with tab1:
                         st.success(f"변환 완료: {done}장" + (f" · 실패 {failed}장" if failed else ""))
                     else:
                         st.error("변환에 실패했습니다. (오류 메시지를 확인해 주세요)")
+
+                    # 변환 후 새 항목으로 캐러셀 이동
+                    try:
+                        new_n = len(list_converted_only())
+                        if new_n > n_before:
+                            st.session_state.carousel_idx = max(n_before, 0)
+                    except Exception:
+                        pass
 
                     st.rerun()
 
