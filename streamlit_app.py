@@ -310,7 +310,7 @@ st.markdown(f"""
       <div class="hero-logo">🐾 Pet Memorialization 🐾</div>
       <div class="tagline">소중한 반려동물을 추모하는 공간</div>
       <div class="badges">
-        <span class="badge"><span class="dot"></span> 변환 사진 {photo_count}장</span>
+        <span class="badge"><span class="dot"></span> 사진 {photo_count}장</span>
         <span class="badge"><span class="dot"></span> 방명록 {message_count}개</span>
       </div>
     </div>
