@@ -63,6 +63,16 @@ def list_uploaded_only():
     return sorted([f for f in os.listdir(UPLOAD_FOLDER)
                    if f.lower().endswith((".png", ".jpg", ".jpeg"))])
 
+def list_uploaded_paths():
+    """업로드 원본의 절대경로 리스트 (최신순)"""
+    if not os.path.exists(UPLOAD_FOLDER):
+        return []
+    paths = [os.path.join(UPLOAD_FOLDER, f)
+             for f in os.listdir(UPLOAD_FOLDER)
+             if f.lower().endswith((".png", ".jpg", ".jpeg"))]
+    paths.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+    return paths
+
 def list_converted_only():
     """변환본: PNG/JPG 모두, 최신순 정렬"""
     if not os.path.exists(CONVERTED_FOLDER):
@@ -311,8 +321,12 @@ tab1, tab2 = st.tabs(["📜 부고장/방명록/추모관", "📺 장례식 스�
 
 # ====== 탭1 ======
 with tab1:
-    # === 상단 일괄 변환 버튼(제목 제거됨) ===
-    if st.button("모든 미변환 원본을 '일본 TV 애니' 스타일로 변환하기"):
+    # 캐러셀 모드 토글 상태 (False=원본, True=변환본)
+    if "show_converted" not in st.session_state:
+        st.session_state.show_converted = False
+
+    # === 상단 일괄 변환 버튼 ===
+    if st.button("🌈 그리운 순간, 그림으로"):
         if client is None:
             st.error("❌ OpenAI 준비가 안 되었습니다. (OPENAI_API_KEY/조직 인증 확인)")
         else:
@@ -325,6 +339,7 @@ with tab1:
 
                 if not to_convert:
                     st.info("변환할 원본이 없습니다. (모두 이미 변환됨)")
+                    st.session_state.show_converted = True  # 이미 변환되어 있으면 변환본 보기로
                 else:
                     progress = st.progress(0)
                     status = st.empty()
@@ -350,6 +365,7 @@ with tab1:
 
                     if success:
                         st.success(f"✅ 변환 완료: {success}장")
+                        st.session_state.show_converted = True
                     if failures:
                         with st.expander(f"⚠️ 실패 {len(failures)}장 (자세히 보기)", expanded=True):
                             for fn, msg in failures:
@@ -359,25 +375,35 @@ with tab1:
                         st.session_state.carousel_idx = 0
                         st.rerun()
 
-    # 캐러셀 (변환본만)
+    # --- 캐러셀 (원본/변환본 전환) ---
     st.markdown("<h2 style='text-align:center;'>In Loving Memory</h2>", unsafe_allow_html=True)
-    converted_list = list_converted_only()
-    n = len(converted_list)
+
+    converted_list = list_converted_only()     # 경로 리스트 (변환본)
+    original_paths = list_uploaded_paths()     # 경로 리스트 (원본)
+
+    use_converted = st.session_state.show_converted and len(converted_list) > 0
+    carousel_src = converted_list if use_converted else original_paths
+    n = len(carousel_src)
 
     if "carousel_idx" not in st.session_state:
         st.session_state.carousel_idx = 0
+    st.session_state.carousel_idx = max(0, min(st.session_state.carousel_idx, max(n-1, 0)))
 
     if n == 0:
-        st.info("현재 표시할 변환 이미지가 없습니다. 상단의 '일괄 AI 변환'을 사용하거나 변환본을 추가해 주세요.")
+        if use_converted:
+            st.info("현재 표시할 변환 이미지가 없습니다. 먼저 사진을 업로드하고 변환을 진행해 주세요.")
+        else:
+            st.info("업로드된 원본 사진이 없습니다. 위에서 파일을 업로드하세요.")
     else:
-        st.session_state.carousel_idx = max(0, min(st.session_state.carousel_idx, n - 1))
         prev, mid, nxt = st.columns([1, 6, 1])
         with prev:
             if st.button("◀", key="carousel_prev"):
                 st.session_state.carousel_idx = (st.session_state.carousel_idx - 1) % n
         with mid:
-            current = converted_list[st.session_state.carousel_idx]
+            current = carousel_src[st.session_state.carousel_idx]
             data_uri = img_file_to_data_uri(current)
+            badge = "변환본" if use_converted else "원본"
+            st.markdown(f"<div style='text-align:center; color:#9B8F88; font-size:13px;'>({badge})</div>", unsafe_allow_html=True)
             st.markdown(f"""
             <div class="photo-frame" style="max-width:720px;margin:0 auto 10px;">
                 <img class="thumb" src="{data_uri}">
