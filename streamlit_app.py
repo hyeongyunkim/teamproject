@@ -6,8 +6,9 @@ import mimetypes
 from datetime import datetime
 import html
 import json
+import tempfile
 
-from PIL import Image  # (현재 변환 안 쓰지만, 나중 확장 대비)
+from PIL import Image
 
 # -------------------- 기본 설정 --------------------
 st.set_page_config(page_title="반려동물 추모관", page_icon="🐾", layout="wide")
@@ -20,7 +21,7 @@ os.makedirs(CONVERTED_FOLDER, exist_ok=True)
 BASE_IMG_URL = "https://github.com/hyeongyunkim/teamproject/raw/main/petfuneral.png"
 INFO_PATH = "memorial_info.json"
 
-# -------------------- OpenAI 설정 (복구) --------------------
+# -------------------- OpenAI 설정 (복구·활성) --------------------
 def load_api_key() -> str:
     key = None
     try:
@@ -36,7 +37,7 @@ client = None
 openai_import_error = None
 if OPENAI_API_KEY:
     try:
-        from openai import OpenAI   # pip install openai>=1.0.0
+        from openai import OpenAI  # pip install openai>=1.0.0
         client = OpenAI(api_key=OPENAI_API_KEY)
     except Exception as e:
         openai_import_error = e
@@ -49,7 +50,7 @@ def list_uploaded_only():
                    if f.lower().endswith((".png", ".jpg", ".jpeg"))])
 
 def list_converted_only():
-    """변환본: PNG/JPG 모두, 최신순으로 정렬 (현재 변환 기능 없음)"""
+    """변환본: PNG/JPG 모두, 최신순으로 정렬"""
     if not os.path.exists(CONVERTED_FOLDER):
         return []
     files = []
@@ -67,13 +68,87 @@ def img_file_to_data_uri(path: str) -> str:
         b64 = base64.b64encode(f.read()).decode("utf-8")
     return f"data:{mime};base64,{b64}"
 
+# 변환본 이름 규칙
+def converted_stem(src_filename: str) -> str:
+    base, _ = os.path.splitext(src_filename)
+    return f"{base}__converted"
+
+def converted_png_name(src_filename: str) -> str:
+    return converted_stem(src_filename) + ".png"
+
+# -------------------- 강한 만화책 리드로잉 프롬프트 --------------------
+COMIC_PROMPT = (
+    "FULL RE-ILLUSTRATION of the pet photo in EXTREME COMIC/MANGA style. "
+    "Use the original only as pose/silhouette reference. Completely redraw as if hand-drawn. "
+    "Strong bold black ink lines, thick clean outlines; high-contrast cel shading (2-3 tones only). "
+    "Flat, high-saturation colors. Halftone screen tones for shadows/background. "
+    "Cartoon exaggeration of features (cute but bold). Stylized simple background (white/flat/halftone). "
+    "No gradients, no blur, no photo textures, no realism. Looks like a printed Japanese manga page."
+)
+
+# -------------------- 단일 이미지 변환 함수 (안정화) --------------------
+def ai_redraw_comic_style(img_path: str, out_path: str):
+    """
+    - 입력 이미지를 흑백 + 정사각 768로 전처리(사진 질감 영향 최소화)
+    - 전영역 편집(완전 투명 마스크)으로 강한 재그리기
+    - 출력은 .png로 강제 저장
+    """
+    if client is None:
+        raise RuntimeError("OpenAI 클라이언트가 준비되지 않았습니다. (OPENAI_API_KEY/조직 인증 확인)")
+
+    if not out_path.lower().endswith(".png"):
+        out_path = os.path.splitext(out_path)[0] + ".png"
+
+    # 전처리
+    with Image.open(img_path) as im:
+        im = im.convert("L")
+        im.thumbnail((768, 768), Image.LANCZOS)
+        canvas = Image.new("L", (768, 768), 255)
+        x = (768 - im.width) // 2
+        y = (768 - im.height) // 2
+        canvas.paste(im, (x, y))
+        preprocessed = canvas.convert("RGBA")
+
+    # 완전 투명 마스크
+    mask_img = Image.new("RGBA", (768, 768), (0, 0, 0, 0))
+
+    tmp_img = tmp_mask = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as t_img:
+            preprocessed.save(t_img.name, "PNG")
+            tmp_img = t_img.name
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as t_mask:
+            mask_img.save(t_mask.name, "PNG")
+            tmp_mask = t_mask.name
+
+        with open(tmp_img, "rb") as f_img, open(tmp_mask, "rb") as f_mask:
+            resp = client.images.edit(
+                model="gpt-image-1",
+                image=f_img,
+                mask=f_mask,
+                prompt=COMIC_PROMPT,
+                size="1024x1024",
+            )
+
+        b64_img = resp.data[0].b64_json
+        img_bytes = base64.b64decode(b64_img)
+        os.makedirs(CONVERTED_FOLDER, exist_ok=True)
+        with open(out_path, "wb") as out:
+            out.write(img_bytes)
+
+    finally:
+        for p in (tmp_img, tmp_mask):
+            try:
+                if p and os.path.exists(p):
+                    os.remove(p)
+            except Exception:
+                pass
+
 # -------------------- 스타일(CSS) --------------------
 st.markdown("""
 <style>
-:root{
-  --bg:#FDF6EC; --ink:#4B3832; --accent:#CFA18D; --accent-2:#FAE8D9; --line:#EED7CA;
-  --shadow:0 10px 24px rgba(79,56,50,0.12);
-}
+:root{ --bg:#FDF6EC; --ink:#4B3832; --accent:#CFA18D; --accent-2:#FAE8D9; --line:#EED7CA;
+--shadow:0 10px 24px rgba(79,56,50,0.12);}
 body { background-color: var(--bg); color: var(--ink); }
 .page-wrap{ max-width:1180px; margin:0 auto; }
 .topbar-fixed { position:fixed; top:0; left:0; right:0; height:60px;
@@ -185,7 +260,54 @@ tab1, tab2 = st.tabs(["📜 부고장/방명록/추모관", "📺 장례식 스�
 
 # ====== 탭1 ======
 with tab1:
-    # 캐러셀 (현재는 변환본만 표시, 변환 기능 비활성 상태)
+    # === 상단 일괄 변환 버튼 (새 버전) ===
+    st.markdown("### 🚀 상단 일괄 AI 변환")
+    if st.button("모든 미변환 원본을 만화풍으로 변환하기"):
+        if client is None:
+            st.error("❌ OpenAI 준비가 안 되었습니다. (OPENAI_API_KEY/조직 인증 확인)")
+        else:
+            originals = list_uploaded_only()
+            if not originals:
+                st.info("업로드된 원본 사진이 없습니다.")
+            else:
+                # 이미 변환된(스템 기준) 제외
+                existing_stems = {os.path.splitext(f)[0] for f in os.listdir(CONVERTED_FOLDER)}
+                to_convert = [fn for fn in originals if converted_stem(fn) not in existing_stems]
+
+                if not to_convert:
+                    st.info("변환할 원본이 없습니다. (모두 이미 변환됨)")
+                else:
+                    progress = st.progress(0)
+                    status = st.empty()
+                    success = 0
+                    failures = []
+                    total = len(to_convert)
+
+                    for i, fname in enumerate(to_convert, start=1):
+                        in_path = os.path.join(UPLOAD_FOLDER, fname)
+                        out_path = os.path.join(CONVERTED_FOLDER, converted_png_name(fname))
+                        try:
+                            status.write(f"변환 중 {i}/{total} : {html.escape(fname)}")
+                            ai_redraw_comic_style(in_path, out_path)
+                            success += 1
+                        except Exception as e:
+                            failures.append((fname, str(e)))
+                        finally:
+                            progress.progress(i / total)
+
+                    if success:
+                        st.success(f"✅ 변환 완료: {success}장")
+                    if failures:
+                        with st.expander(f"⚠️ 실패 {len(failures)}장 (자세히 보기)", expanded=True):
+                            for fn, msg in failures:
+                                st.error(f"{fn} → {msg}")
+                        st.info("실패가 있어 자동 새로고침을 하지 않았습니다. 오류 확인 후 다시 시도해 주세요.")
+                    else:
+                        # 모두 성공: 캐러셀 최신(0번)으로 보내고 리런
+                        st.session_state.carousel_idx = 0
+                        st.rerun()
+
+    # 캐러셀 (변환본만)
     st.markdown("<h2 style='text-align:center;'>In Loving Memory</h2>", unsafe_allow_html=True)
     converted_list = list_converted_only()
     n = len(converted_list)
@@ -194,7 +316,7 @@ with tab1:
         st.session_state.carousel_idx = 0
 
     if n == 0:
-        st.info("현재 표시할 변환 이미지가 없습니다. (AI 변환 기능은 추후 활성화 예정)")
+        st.info("현재 표시할 변환 이미지가 없습니다. 상단의 '일괄 AI 변환'을 사용하거나 변환본을 추가해 주세요.")
     else:
         st.session_state.carousel_idx = max(0, min(st.session_state.carousel_idx, n - 1))
         prev, mid, nxt = st.columns([1, 6, 1])
@@ -350,6 +472,11 @@ with tab1:
                         if st.button("삭제", key=f"del_origin_{i+j}"):
                             try:
                                 os.remove(path)
+                                # 변환본도 스템 기준으로 함께 제거
+                                stem = converted_stem(fname)
+                                for cf in list(os.listdir(CONVERTED_FOLDER)):
+                                    if os.path.splitext(cf)[0] == stem:
+                                        os.remove(os.path.join(CONVERTED_FOLDER, cf))
                                 st.success("삭제되었습니다.")
                                 st.rerun()
                             except Exception as e:
