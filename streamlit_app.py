@@ -314,7 +314,6 @@ with tab1:
     if "carousel_idx" not in st.session_state:
         st.session_state.carousel_idx = 0
 
-    # --- 데이터 소스 선택(원본/변환본) ---
     converted_list = list_converted_only()
     original_paths = list_uploaded_paths()
     use_converted = st.session_state.show_converted and len(converted_list) > 0
@@ -322,11 +321,10 @@ with tab1:
     n = len(carousel_src)
     st.session_state.carousel_idx = max(0, min(st.session_state.carousel_idx, max(n-1, 0)))
 
-    # === 컨트롤+이미지 3컬럼: [좌 컨트롤 | 이미지(가운데 정렬) | 우 컨트롤] ===
-    # 좌우를 아주 좁게(1) 두어 컨트롤이 이미지에 바짝 붙도록, 중앙은 크게(10)
+    # === 컨트롤+이미지 3컬럼 ===
     col_left, col_mid, col_right = st.columns([1, 10, 1], gap="small")
 
-    # --- 왼쪽 컨트롤 (변환 버튼 + 이전 화살표) ---
+    # 왼쪽 컨트롤
     with col_left:
         if st.button("🌈 그리운 순간,\n그림으로", use_container_width=True):
             if client is None:
@@ -380,9 +378,9 @@ with tab1:
         st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
         if n > 0 and st.button("◀", key="carousel_prev", use_container_width=True):
             st.session_state.carousel_idx = (st.session_state.carousel_idx - 1) % n
-            st.experimental_rerun()
+            st.rerun()  # ← experimental_rerun() 대신
 
-    # --- 가운데 이미지 (완전 중앙 정렬) ---
+    # 가운데 이미지
     with col_mid:
         st.markdown("<h2 style='text-align:center;'>In Loving Memory</h2>", unsafe_allow_html=True)
 
@@ -399,7 +397,6 @@ with tab1:
                 f"<div style='text-align:center; color:#9B8F88; font-size:13px;'>({badge})</div>",
                 unsafe_allow_html=True
             )
-            # 이미지 박스 중앙 정렬
             st.markdown(
                 f"""
                 <div style="display:flex;justify-content:center;">
@@ -415,7 +412,7 @@ with tab1:
                 unsafe_allow_html=True
             )
 
-    # --- 오른쪽 컨트롤 (원본 보기 + 다음 화살표) ---
+    # 오른쪽 컨트롤
     with col_right:
         if st.button("🖼️ 원본\n다시 보기", use_container_width=True):
             if len(list_uploaded_paths()) == 0:
@@ -428,7 +425,7 @@ with tab1:
         st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
         if n > 0 and st.button("▶", key="carousel_next", use_container_width=True):
             st.session_state.carousel_idx = (st.session_state.carousel_idx + 1) % n
-            st.experimental_rerun()
+            st.rerun()  # ← experimental_rerun() 대신
 
     # 부고장
     st.subheader("📜 부고장")
