@@ -365,30 +365,87 @@ with tab1:
     else:
         st.info("아직 등록된 메시지가 없습니다.")
 
-    # -------------------- 온라인 추모관: 업로드만 --------------------
+    # -------------------- 온라인 추모관: 업로드만 + 원본 미리보기 --------------------
     st.subheader("🖼️ 온라인 추모관")
+
     with st.form("gallery_upload_only", clear_on_submit=True):
-        uploaded_files = st.file_uploader("사진 업로드", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
+        uploaded_files = st.file_uploader(
+            "사진 업로드 (PNG/JPG)", type=["png", "jpg", "jpeg"], accept_multiple_files=True
+        )
         submit_upload = st.form_submit_button("업로드")  # ✅ 업로드 전용 버튼
 
-    if submit_upload and uploaded_files:
-        saved, dup = 0, 0
-        for uploaded_file in uploaded_files:
-            data = uploaded_file.getvalue()
-            digest = hashlib.sha256(data).hexdigest()[:16]
-            if any(f.startswith(digest + "_") for f in os.listdir(UPLOAD_FOLDER)):
-                dup += 1
-                continue
-            safe_name_file = "".join(c for c in uploaded_file.name if c not in "\\/:*?\"<>|")
-            filename = f"{digest}_{safe_name_file}"
-            in_path = os.path.join(UPLOAD_FOLDER, filename)
-            with open(in_path, "wb") as f:
-                f.write(data)
-            saved += 1
+    if submit_upload:
+        if not uploaded_files:
+            st.warning("업로드할 파일을 선택해 주세요.")
+        else:
+            os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+            saved, dup, errs = 0, 0, 0
+            existing = set(os.listdir(UPLOAD_FOLDER))
+            for uf in uploaded_files:
+                try:
+                    data = uf.getvalue()
+                    if not data:
+                        errs += 1
+                        continue
+                    digest = hashlib.sha256(data).hexdigest()[:16]
+                    safe_name = "".join(c for c in uf.name if c not in "\\/:*?\"<>|")
+                    filename = f"{digest}_{safe_name}"
 
-        if saved: st.success(f"{saved}장 업로드 완료! 아래 ‘모두 AI 변환’을 눌러 만화풍으로 변환하세요.")
-        if dup: st.info(f"중복으로 제외된 사진: {dup}장")
-        st.rerun()
+                    # 해시 기준 중복 방지
+                    if any(name.startswith(digest + "_") for name in existing):
+                        dup += 1
+                        continue
+
+                    in_path = os.path.join(UPLOAD_FOLDER, filename)
+                    with open(in_path, "wb") as f:
+                        f.write(data)
+                    saved += 1
+                    existing.add(filename)
+                except Exception as e:
+                    errs += 1
+                    st.error(f"업로드 실패({uf.name}): {e}")
+
+            if saved: st.success(f"✅ {saved}장 업로드 완료! 아래 ‘모두 AI 변환’을 눌러 만화풍으로 변환하세요.")
+            if dup:   st.info(f"ℹ️ 중복으로 제외된 사진: {dup}장")
+            if errs:  st.warning(f"⚠️ 저장 중 오류: {errs}장")
+            st.rerun()
+
+    # 업로드된 원본 미리보기 (3열 그리드)
+    originals = list_uploaded_only()
+    if originals:
+        st.caption(f"📂 업로드된 원본: {len(originals)}장 (아래 이미지는 변환 전 원본입니다)")
+        for row_start in range(0, len(originals), 3):
+            cols = st.columns(3, gap="medium")
+            for j, fname in enumerate(originals[row_start:row_start+3]):
+                path = os.path.join(UPLOAD_FOLDER, fname)
+                with cols[j]:
+                    try:
+                        data_uri = img_file_to_data_uri(path)
+                        st.markdown(
+                            f"""
+                            <div class="frame-card">
+                              <div class="frame-edge">
+                                <img class="square-thumb" src="{data_uri}" alt="{html.escape(fname)}"/>
+                              </div>
+                              <div class="frame-meta">{html.escape(fname)}</div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True
+                        )
+                        if st.button("삭제", key=f"del_origin_{row_start+j}"):
+                            try:
+                                os.remove(path)
+                                conv = os.path.join(CONVERTED_FOLDER, f"converted_{fname}")
+                                if os.path.exists(conv):
+                                    os.remove(conv)
+                                st.success("삭제되었습니다.")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"삭제 실패: {e}")
+                    except Exception as e:
+                        st.error(f"미리보기 실패({fname}): {e}")
+    else:
+        st.info("아직 업로드된 사진이 없습니다. 위에서 파일을 업로드하세요.")
 
     st.caption("💡 업로드만 먼저 하고, 아래 ‘모두 AI 변환’ 버튼으로 일괄 변환할 수 있어요.")
 
