@@ -324,8 +324,8 @@ with tab1:
     if "show_converted" not in st.session_state:
         st.session_state.show_converted = False
 
-    # === 상단 버튼 영역: 좌(변환) · 가운데 비움 · 우(원본복귀) ===
-    col_left, col_spacer, col_right = st.columns([1, 2, 1])
+    # === 상단 버튼 영역: 좌(변환) · 넓은 중앙 · 큰 스페이서 · 우(원본복귀) ===
+    col_left, col_mid, col_spacer, col_right = st.columns([1, 6, 8, 1])
 
     with col_left:
         if st.button("🌈 그리운 순간, 그림으로"):
@@ -406,11 +406,14 @@ with tab1:
         else:
             st.info("업로드된 원본 사진이 없습니다. 위에서 파일을 업로드하세요.")
     else:
-        prev, mid, nxt = st.columns([1, 6, 1])
-        with prev:
+        # 4컬럼 배치: [이전 | 이미지 | 큰 스페이서 | 다음] → 오른쪽 화살표를 화면 끝에 가깝게
+        col_prev, col_img, col_space, col_next = st.columns([1, 6, 8, 1])
+
+        with col_prev:
             if st.button("◀", key="carousel_prev"):
                 st.session_state.carousel_idx = (st.session_state.carousel_idx - 1) % n
-        with mid:
+
+        with col_img:
             current = carousel_src[st.session_state.carousel_idx]
             data_uri = img_file_to_data_uri(current)
             badge = "변환본" if use_converted else "원본"
@@ -424,7 +427,8 @@ with tab1:
                 f"<p style='text-align:center;'><b>{st.session_state.carousel_idx+1}/{n}</b></p>",
                 unsafe_allow_html=True
             )
-        with nxt:
+
+        with col_next:
             if st.button("▶", key="carousel_next"):
                 st.session_state.carousel_idx = (st.session_state.carousel_idx + 1) % n
 
