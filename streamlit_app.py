@@ -44,17 +44,6 @@ if OPENAI_API_KEY:
         openai_import_error = e
 
 # -------------------- 유틸 --------------------
-def list_all_images_for_carousel():
-    files = []
-    for folder in [UPLOAD_FOLDER, CONVERTED_FOLDER]:
-        if os.path.exists(folder):
-            files += [
-                os.path.join(folder, f)
-                for f in os.listdir(folder)
-                if f.lower().endswith((".png", ".jpg", ".jpeg"))
-            ]
-    return sorted(files)
-
 def list_uploaded_only():
     if not os.path.exists(UPLOAD_FOLDER):
         return []
@@ -79,15 +68,6 @@ def img_file_to_data_uri(path: str) -> str:
     with open(path, "rb") as f:
         b64 = base64.b64encode(f.read()).decode("utf-8")
     return f"data:{mime};base64,{b64}"
-
-def safe_remove(path: str) -> bool:
-    try:
-        if os.path.exists(path):
-            os.remove(path)
-            return True
-        return False
-    except Exception:
-        return False
 
 # -------------------- 강한 만화책 리드로잉 프롬프트 --------------------
 COMIC_PROMPT = (
@@ -118,7 +98,7 @@ def ai_redraw_comic_style(img_path: str, out_path: str):
 
     # 1) 입력 전처리: 흑백 + 축소(최대 768), 정사각 캔버스에 중앙 배치
     with Image.open(img_path) as im:
-        im = im.convert("L")  # grayscale로 사진 질감 영향 최소화
+        im = im.convert("L")  # grayscale
         im.thumbnail((768, 768), Image.LANCZOS)
         canvas = Image.new("L", (768, 768), 255)
         x = (768 - im.width) // 2
@@ -157,16 +137,12 @@ def ai_redraw_comic_style(img_path: str, out_path: str):
             out.write(img_bytes)
 
     finally:
-        try:
-            if tmp_img_path and os.path.exists(tmp_img_path):
-                os.remove(tmp_img_path)
-        except Exception:
-            pass
-        try:
-            if tmp_mask_path and os.path.exists(tmp_mask_path):
-                os.remove(tmp_mask_path)
-        except Exception:
-            pass
+        for p in (tmp_img_path, tmp_mask_path):
+            try:
+                if p and os.path.exists(p):
+                    os.remove(p)
+            except Exception:
+                pass
 
 # -------------------- 스타일(CSS) --------------------
 st.markdown("""
@@ -207,7 +183,7 @@ body { background-color: var(--bg); color: var(--ink); }
 </style>
 """, unsafe_allow_html=True)
 
-# -------------------- 상단 고정 바 --------------------
+# -------------------- 상단 바 --------------------
 st.markdown("""<div class="topbar-fixed"><div class="brand">🐾 Pet Memorialization 🐾</div></div>""", unsafe_allow_html=True)
 st.markdown('<div class="main-block">', unsafe_allow_html=True)
 
@@ -241,7 +217,6 @@ if st.sidebar.button("저장하기"):
     st.sidebar.success("저장 완료!")
     st.rerun()
 
-# (진단) 사이드바 상태
 with st.sidebar.expander("🔎 상태"):
     st.write("OpenAI 클라이언트:", "OK" if client else ("오류" if openai_import_error else "없음"))
     if OPENAI_API_KEY:
@@ -258,7 +233,6 @@ except FileNotFoundError:
     guest_lines = []
 
 def list_for_badge():
-    # 캐러셀용: 변환본만 카운트
     return len(list_converted_only()), len(guest_lines)
 
 photo_count, message_count = list_for_badge()
@@ -318,7 +292,7 @@ with tab1:
             if st.button("▶", key="carousel_next"):
                 st.session_state.carousel_idx = (st.session_state.carousel_idx + 1) % n
     else:
-        st.info("아직 변환된 사진이 없습니다. 아래 '온라인 추모관'에서 업로드하면 자동 변환되어 캐러셀에 표시됩니다.")
+        st.info("아직 변환된 사진이 없습니다. 아래 '온라인 추모관'에서 업로드 후 ‘모두 AI 변환’을 눌러주세요.")
 
     # 부고장
     st.subheader("📜 부고장")
@@ -391,12 +365,13 @@ with tab1:
     else:
         st.info("아직 등록된 메시지가 없습니다.")
 
-    # 온라인 추모관 — 업로드 (업로드 즉시 자동 변환)
+    # -------------------- 온라인 추모관: 업로드만 --------------------
     st.subheader("🖼️ 온라인 추모관")
-    with st.form("gallery_upload", clear_on_submit=True):
+    with st.form("gallery_upload_only", clear_on_submit=True):
         uploaded_files = st.file_uploader("사진 업로드", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
-        submit = st.form_submit_button("업로드 및 자동 변환")
-    if submit and uploaded_files:
+        submit_upload = st.form_submit_button("업로드")  # ✅ 업로드 전용 버튼
+
+    if submit_upload and uploaded_files:
         saved, dup = 0, 0
         for uploaded_file in uploaded_files:
             data = uploaded_file.getvalue()
@@ -411,19 +386,13 @@ with tab1:
                 f.write(data)
             saved += 1
 
-            # ✅ 업로드 직후 자동 변환
-            if client is not None:
-                out_path = os.path.join(CONVERTED_FOLDER, f"converted_{filename}")
-                try:
-                    ai_redraw_comic_style(in_path, out_path)
-                except Exception as e:
-                    st.error(f"AI 변환 실패: {e}")
-
-        if saved: st.success(f"{saved}장 업로드 및 AI 변환 완료! 캐러셀에서 확인하세요.")
+        if saved: st.success(f"{saved}장 업로드 완료! 아래 ‘모두 AI 변환’을 눌러 만화풍으로 변환하세요.")
         if dup: st.info(f"중복으로 제외된 사진: {dup}장")
         st.rerun()
 
-    # 모두 AI 변환 (미변환 원본만 일괄 변환) — 안정화 버전
+    st.caption("💡 업로드만 먼저 하고, 아래 ‘모두 AI 변환’ 버튼으로 일괄 변환할 수 있어요.")
+
+    # -------------------- 모두 AI 변환 (미변환 원본만) --------------------
     st.caption("💡 '모두 AI 변환'을 누르면 미변환 원본만 **만화책 리드로잉**으로 일괄 변환합니다. (OpenAI 전용)")
     if st.button("모두 AI 변환"):
         if client is None:
@@ -477,4 +446,3 @@ with tab2:
         f"<div style='text-align:center;'><iframe width='560' height='315' src='{video_url}' frameborder='0' allowfullscreen></iframe></div>",
         unsafe_allow_html=True
     )
-
