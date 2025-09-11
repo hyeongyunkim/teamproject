@@ -40,7 +40,7 @@ client = None
 openai_import_error = None
 if OPENAI_API_KEY:
     try:
-        from openai import OpenAI
+        from openai import OpenAI  # pip install openai>=1.0.0
         if OPENAI_ORG_ID:
             client = OpenAI(api_key=OPENAI_API_KEY, organization=OPENAI_ORG_ID)
         else:
@@ -52,99 +52,196 @@ if OPENAI_API_KEY:
 def list_uploaded_only():
     if not os.path.exists(UPLOAD_FOLDER):
         return []
-    return sorted([f for f in os.listdir(UPLOAD_FOLDER) if f.lower().endswith((".png", ".jpg", ".jpeg"))])
+    return sorted([f for f in os.listdir(UPLOAD_FOLDER)
+                   if f.lower().endswith((".png", ".jpg", ".jpeg"))])
+
+def list_uploaded_paths():
+    if not os.path.exists(UPLOAD_FOLDER):
+        return []
+    paths = [os.path.join(UPLOAD_FOLDER, f)
+             for f in os.listdir(UPLOAD_FOLDER)
+             if f.lower().endswith((".png", ".jpg", ".jpeg"))]
+    paths.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+    return paths
 
 def list_converted_only():
     if not os.path.exists(CONVERTED_FOLDER):
         return []
-    files = [os.path.join(CONVERTED_FOLDER, f) for f in os.listdir(CONVERTED_FOLDER) if f.lower().endswith((".png", ".jpg", ".jpeg"))]
+    files = []
+    for f in os.listdir(CONVERTED_FOLDER):
+        if f.lower().endswith((".png", ".jpg", ".jpeg")):
+            files.append(os.path.join(CONVERTED_FOLDER, f))
     files.sort(key=lambda p: os.path.getmtime(p), reverse=True)
     return files
 
 def img_file_to_data_uri(path: str) -> str:
     mime, _ = mimetypes.guess_type(path)
-    if mime is None: mime = "image/png"
-    with open(path, "rb") as f: b64 = base64.b64encode(f.read()).decode("utf-8")
+    if mime is None:
+        mime = "image/png"
+    with open(path, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode("utf-8")
     return f"data:{mime};base64,{b64}"
 
 def converted_stem(src_filename: str) -> str:
-    return os.path.splitext(src_filename)[0] + "__converted"
+    base, _ = os.path.splitext(src_filename)
+    return f"{base}__converted"
 
 def converted_png_name(src_filename: str) -> str:
     return converted_stem(src_filename) + ".png"
 
 # -------------------- 이미지 변환 --------------------
+# 일본 TV 애니 감성 프롬프트
+_ANIME_PROMPT = (
+    "High-quality Japanese TV anime illustration. Keep the SAME pose and composition as the input photo. "
+    "Clean cel shading with 2–3 tones per color, hard shadows with clear shapes, flat high-saturation palette. "
+    "Bold, clean black lineart with slight variable line weight (0.5–2.5px). "
+    "Cute expressive eyes (species-appropriate), small/simple nose & mouth, subtle fur tufts and inner line details. "
+    "Anime highlights on eyes/fur, crisp edges. "
+    "Simple background without gradients: plain color, halftone dots, or speed lines. "
+    "No photo textures, no blur, no noise, no text, no watermark, not photorealistic."
+)
+
 def _save_temp_square_png(src_path: str, max_side: int = 1024) -> str:
+    """원본 비율 유지 + 흰 배경 정사각 캔버스에 합성하여 임시 PNG 저장."""
     with Image.open(src_path) as im:
         im = im.convert("RGBA")
         scale = min(max_side / im.width, max_side / im.height, 1.0)
-        new_w, new_h = int(im.width * scale), int(im.height * scale)
+        new_w = int(im.width * scale)
+        new_h = int(im.height * scale)
         im = im.resize((new_w, new_h), Image.LANCZOS)
+
         canvas = Image.new("RGBA", (max_side, max_side), (255, 255, 255, 255))
-        canvas.paste(im, ((max_side - new_w) // 2, (max_side - new_h) // 2))
+        x = (max_side - new_w) // 2
+        y = (max_side - new_h) // 2
+        canvas.paste(im, (x, y))
+
     t = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
     canvas.save(t.name, "PNG")
     return t.name
 
 def _make_frame_mask_rgba(size: int = 1024, border: int = 24):
-    m = Image.new("L", (size, size), 0)
+    """images.edit 폴백용: 가장자리 보존(불투명), 내부 편집(투명)"""
+    m = Image.new("L", (size, size), 0)  # 0=편집
     d = ImageDraw.Draw(m)
-    d.rectangle([0, 0, size-1, border-1], fill=255)
-    d.rectangle([0, size-border, size-1, size-1], fill=255)
-    d.rectangle([0, border, border-1, size-border-1], fill=255)
-    d.rectangle([size-border, border, size-1, size-border-1], fill=255)
+    d.rectangle([0, 0, size-1, border-1], fill=255)                         # top
+    d.rectangle([0, size-border, size-1, size-1], fill=255)                 # bottom
+    d.rectangle([0, border, border-1, size-border-1], fill=255)             # left
+    d.rectangle([size-border, border, size-1, size-border-1], fill=255)     # right
     return m.convert("RGBA")
 
-_ANIME_PROMPT = (
-    "High-quality Japanese TV anime illustration. Keep the SAME pose and composition. "
-    "Clean cel shading with 2–3 tones, bold black lineart, expressive eyes, "
-    "simple background (plain/halftone/speed lines). No photo textures or realism."
-)
-
 def ai_redraw_comic_style(img_path: str, out_path: str):
+    """
+    variations 우선 → edit 폴백. 결과는 PNG 저장.
+    """
     if client is None:
-        raise RuntimeError("OpenAI 클라이언트가 준비되지 않았습니다.")
+        raise RuntimeError("OpenAI 클라이언트가 준비되지 않았습니다. (OPENAI_API_KEY/조직 인증 확인)")
+
     if not out_path.lower().endswith(".png"):
         out_path = os.path.splitext(out_path)[0] + ".png"
-    tmp_img, tmp_mask = None, None
+
+    tmp_img = None
+    tmp_mask = None
     try:
-        tmp_img = _save_temp_square_png(img_path)
+        tmp_img = _save_temp_square_png(img_path, max_side=1024)
+
+        # 1) variations (일부 환경에선 prompt 인자 미지원 → 예외 시 프롬프트 제거 재시도)
         try:
             with open(tmp_img, "rb") as f_img:
                 try:
-                    resp = client.images.variations(model="gpt-image-1", image=f_img, n=1, size="1024x1024", prompt=_ANIME_PROMPT)
+                    resp = client.images.variations(
+                        model="gpt-image-1",
+                        image=f_img,
+                        n=1,
+                        size="1024x1024",
+                        prompt=_ANIME_PROMPT,
+                    )
                 except Exception:
                     f_img.seek(0)
-                    resp = client.images.variations(model="gpt-image-1", image=f_img, n=1, size="1024x1024")
+                    resp = client.images.variations(
+                        model="gpt-image-1",
+                        image=f_img,
+                        n=1,
+                        size="1024x1024",
+                    )
         except Exception:
-            mask = _make_frame_mask_rgba()
+            # 2) 폴백: edit + 프레임 마스크
+            mask = _make_frame_mask_rgba(size=1024, border=24)
             tmask = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
-            mask.save(tmask.name, "PNG"); tmp_mask = tmask.name
+            mask.save(tmask.name, "PNG")
+            tmp_mask = tmask.name
+
             with open(tmp_img, "rb") as f_img, open(tmp_mask, "rb") as f_mask:
-                resp = client.images.edit(model="gpt-image-1", image=f_img, mask=f_mask, size="1024x1024", prompt=_ANIME_PROMPT)
+                resp = client.images.edit(
+                    model="gpt-image-1",
+                    image=f_img,
+                    mask=f_mask,
+                    size="1024x1024",
+                    prompt=_ANIME_PROMPT,
+                )
+
+        # 저장
         b64_img = resp.data[0].b64_json
-        with open(out_path, "wb") as out: out.write(base64.b64decode(b64_img))
+        img_bytes = base64.b64decode(b64_img)
+        with open(out_path, "wb") as out:
+            out.write(img_bytes)
+
     finally:
         for p in (tmp_img, tmp_mask):
             try:
-                if p and os.path.exists(p): os.remove(p)
-            except: pass
+                if p and os.path.exists(p):
+                    os.remove(p)
+            except Exception:
+                pass
 
-# -------------------- CSS --------------------
+# -------------------- 스타일(CSS) --------------------
 st.markdown("""
 <style>
-/* 버튼 스타일 */
+:root{ --bg:#FDF6EC; --ink:#4B3832; --accent:#CFA18D; --accent-2:#FAE8D9; --line:#EED7CA;
+--shadow:0 10px 24px rgba(79,56,50,0.12);}
+body { background-color: var(--bg); color: var(--ink); }
+.page-wrap{ max-width:1180px; margin:0 auto; }
+.topbar-fixed { position:fixed; top:0; left:0; right:0; height:60px;
+  background:#FAE8D9; border-bottom:1px solid var(--line);
+  display:flex; align-items:center; padding:0 24px; z-index:1000; }
+.topbar-fixed .brand { font-size:28px; font-weight:900; color:#4B3832; }
+.main-block { margin-top:74px; }
+.hero{ background:linear-gradient(180deg,#FFF7F2 0%,#FFEFE6 100%);
+  border:1px solid var(--line); border-radius:24px; box-shadow:var(--shadow); padding:17px 32px; }
+.hero-grid{ display:grid; grid-template-columns:1.6fr .9fr; gap:28px; align-items:center; }
+.hero-logo{ font-size:26px; font-weight:900; color:#4B3832; }
+.tagline{ font-size:18px; color:#6C5149; margin-bottom:14px; }
+.badges{ display:flex; gap:10px; flex-wrap:wrap; }
+.badge{ padding:6px 10px; border-radius:999px; font-weight:700; font-size:13px;
+  background:#fff; border:1px solid var(--line); box-shadow:0 2px 8px rgba(79,56,50,.05); color:#5A3E36; }
+.badge .dot{ width:8px; height:8px; border-radius:50%; background: var(--accent); }
+.hero-visual .kv img{ width:50%; display:block; }
+.photo-frame{ background:#fff; border:6px solid #F3E2D8; box-shadow:0 8px 18px rgba(79,56,50,0.12);
+  border-radius:16px; padding:10px; margin-bottom:12px; }
+.photo-frame .thumb{ width:70%; display:block; border-radius:10px; margin:0 auto; }
+.guest-card{ background:linear-gradient(180deg,#FFF8F1 0%,#FFFFFF 100%);
+  border:1px solid var(--line); border-left:6px solid #CFA18D; border-radius:14px;
+  padding:14px 16px; margin:10px 0 16px; box-shadow:0 4px 10px rgba(79,56,50,0.08); }
+.stTabs [role="tablist"]{ justify-content:center !important; gap:12px !important; }
+.frame-card{ background:#fff; border:6px solid #F3E2D8; border-radius:16px;
+  box-shadow:0 8px 18px rgba(79,56,50,0.12); padding:10px; margin-bottom:16px; }
+.frame-edge{ background:#FFFFFF; border:1px solid var(--line); border-radius:12px; padding:8px; }
+.square-thumb{ width:100%; aspect-ratio:1/1; object-fit:cover; display:block; border-radius:10px; }
+.frame-meta{ color:#6C5149; font-size:12px; margin-top:8px; text-align:center; opacity:.9; }
+
+/* 🎨 그림 버튼 (좌) - 파스텔 블루 */
 div[data-testid="stButton"][key="btn_convert"] button {
     background-color: #d7ecfb; color: #2a4d69; border: 1px solid #bcdff7;
-    border-radius: 8px; padding: 0.4em 1em; min-width: 80px;
+    border-radius: 8px; padding: 0.45em 1em; min-width: 88px;
     font-weight: 600; font-size: 15px; white-space: nowrap;
 }
 div[data-testid="stButton"][key="btn_convert"] button:hover {
     background-color: #c2e0fa; border-color: #a6d1f5;
 }
+
+/* 🖼️ 원본 버튼 (우) - 파스텔 그린 */
 div[data-testid="stButton"][key="btn_original"] button {
     background-color: #d9f5e3; color: #2e5d4e; border: 1px solid #b8e6cf;
-    border-radius: 8px; padding: 0.4em 1em; min-width: 80px;
+    border-radius: 8px; padding: 0.45em 1em; min-width: 88px;
     font-weight: 600; font-size: 15px; white-space: nowrap;
 }
 div[data-testid="stButton"][key="btn_original"] button:hover {
@@ -157,47 +254,351 @@ div[data-testid="stButton"][key="btn_original"] button:hover {
 st.markdown("""<div class="topbar-fixed"><div class="brand">🐾 Pet Memorialization 🐾</div></div>""", unsafe_allow_html=True)
 st.markdown('<div class="main-block">', unsafe_allow_html=True)
 
-# -------------------- 모드 상태 --------------------
-if "show_converted" not in st.session_state:
-    st.session_state.show_converted = True
+# -------------------- 부고 정보 --------------------
+default_name = "초코"
+default_birth = datetime(2015, 3, 15).date()
+default_pass  = datetime(2024, 8, 10).date()
+
+if os.path.exists(INFO_PATH):
+    try:
+        with open(INFO_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            default_name = data.get("name", default_name)
+            if data.get("birth"): default_birth = datetime.strptime(data["birth"], "%Y-%m-%d").date()
+            if data.get("pass"):  default_pass  = datetime.strptime(data["pass"], "%Y-%m-%d").date()
+    except Exception:
+        pass
+
+st.sidebar.title("📜 부고 정보 입력")
+pet_name = st.sidebar.text_input("반려동물 이름", value=default_name)
+birth_date = st.sidebar.date_input("태어난 날", value=default_birth)
+pass_date = st.sidebar.date_input("무지개다리 건넌 날", value=default_pass)
+
+if st.sidebar.button("저장하기"):
+    with open(INFO_PATH, "w", encoding="utf-8") as f:
+        json.dump({
+            "name": (pet_name or "").strip() or default_name,
+            "birth": birth_date.isoformat(),
+            "pass":  pass_date.isoformat()
+        }, f, ensure_ascii=False, indent=2)
+    st.sidebar.success("저장 완료!")
+    st.rerun()
+
+with st.sidebar.expander("🔎 상태"):
+    st.write("OpenAI 클라이언트:", "OK" if client else ("오류" if openai_import_error else "없음"))
+    if OPENAI_API_KEY:
+        masked = OPENAI_API_KEY[:7] + "..." + OPENAI_API_KEY[-4:]
+        st.caption(f"키 지문: {masked}")
+    st.caption(f"조직 ID: {OPENAI_ORG_ID or '(미지정)'}")
+
+# -------------------- 히어로 --------------------
+try:
+    with open("guestbook.txt", "r", encoding="utf-8") as f:
+        guest_lines = [ln for ln in f.readlines() if ln.strip()]
+except FileNotFoundError:
+    guest_lines = []
+
+def list_for_badge():
+    return len(list_converted_only()), len(guest_lines)
+
+photo_count, message_count = list_for_badge()
+
+st.markdown(f"""
+<div class="hero">
+  <div class="hero-grid">
+    <div>
+      <div class="hero-logo">🐾 Pet Memorialization 🐾</div>
+      <div class="tagline">소중한 반려동물을 추모하는 공간</div>
+      <div class="badges">
+        <span class="badge"><span class="dot"></span> 변환 사진 {photo_count}장</span>
+        <span class="badge"><span class="dot"></span> 방명록 {message_count}개</span>
+      </div>
+    </div>
+    <div class="hero-visual">
+      <div class="kv">
+        <img src="{BASE_IMG_URL}" alt="memorial">
+      </div>
+    </div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
 
 # -------------------- 탭 --------------------
-tab1, tab2 = st.tabs(["📜 추모관", "📺 스트리밍"])
+tab1, tab2 = st.tabs(["📜 부고장/방명록/추모관", "📺 장례식 스트리밍"])
 
+# ====== 탭1: 추모관/방명록/업로드 ======
 with tab1:
-    # 버튼 행
-    col_left, col_mid, col_spacer, col_right = st.columns([1,6,8,1])
+    # 상태 초기화
+    if "show_converted" not in st.session_state:
+        st.session_state.show_converted = True
+    if "carousel_idx" not in st.session_state:
+        st.session_state.carousel_idx = 0
+
+    # 상단 컨트롤 + 캐러셀
+    col_left, col_mid, col_right = st.columns([1, 10, 1], gap="small")
+
     with col_left:
-        if st.button("🎨 그림", key="btn_convert"):
-            st.session_state.show_converted = True
-            st.session_state.carousel_idx = 0
+        if st.button("🎨 그림", key="btn_convert", use_container_width=True):
+            if client is None:
+                st.error("❌ OpenAI 준비가 안 되었습니다. (OPENAI_API_KEY/조직 인증 확인)")
+            else:
+                originals = list_uploaded_only()
+                if not originals:
+                    st.info("업로드된 원본 사진이 없습니다.")
+                else:
+                    existing_stems = {os.path.splitext(f)[0] for f in os.listdir(CONVERTED_FOLDER)}
+                    to_convert = [fn for fn in originals if converted_stem(fn) not in existing_stems]
+
+                    if not to_convert:
+                        st.info("변환할 원본이 없습니다. (모두 이미 변환됨)")
+                        st.session_state.show_converted = True
+                        st.rerun()
+                    else:
+                        progress = st.progress(0)
+                        status = st.empty()
+                        success = 0
+                        failures = []
+                        total = len(to_convert)
+
+                        for i, fname in enumerate(to_convert, start=1):
+                            in_path = os.path.join(UPLOAD_FOLDER, fname)
+                            out_path = os.path.join(CONVERTED_FOLDER, converted_png_name(fname))
+                            try:
+                                status.write(f"변환 중 {i}/{total} : {html.escape(fname)}")
+                                ai_redraw_comic_style(in_path, out_path)
+                                success += 1
+                            except Exception as e:
+                                msg = str(e)
+                                if "must be verified" in msg or "403" in msg:
+                                    msg = ("이미지 모델 접근 권한(조직 Verify/결제)이 필요합니다. "
+                                           "https://platform.openai.com/settings/organization/general 에서 인증 후 재시도하세요.")
+                                failures.append((fname, msg))
+                            finally:
+                                progress.progress(i / total)
+
+                        if success:
+                            st.success(f"✅ 변환 완료: {success}장")
+                            st.session_state.show_converted = True
+                        if failures:
+                            with st.expander(f"⚠️ 실패 {len(failures)}장 (자세히 보기)", expanded=True):
+                                for fn, msg in failures:
+                                    st.error(f"{fn} → {msg}")
+                        st.rerun()
+
+        st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+        # 왼쪽 화살표
+        images_for_nav = list_converted_only() if st.session_state.show_converted else list_uploaded_paths()
+        n_for_nav = len(images_for_nav)
+        if n_for_nav > 0 and st.button("◀", key="carousel_prev", use_container_width=True):
+            st.session_state.carousel_idx = (st.session_state.carousel_idx - 1) % n_for_nav
             st.rerun()
+
+    with col_mid:
+        # 캐러셀 본문
+        st.markdown("<h2 style='text-align:center;'>In Loving Memory</h2>", unsafe_allow_html=True)
+        converted_list = list_converted_only()
+        original_paths = list_uploaded_paths()
+        use_converted = st.session_state.show_converted and len(converted_list) > 0
+        carousel_src = converted_list if use_converted else original_paths
+        n = len(carousel_src)
+
+        # 인덱스 보정
+        st.session_state.carousel_idx = max(0, min(st.session_state.carousel_idx, max(n-1, 0)))
+
+        if n == 0:
+            if use_converted:
+                st.info("표시할 변환 이미지가 없습니다. 먼저 사진을 업로드하고 ‘그림’ 변환을 진행해 주세요.")
+            else:
+                st.info("업로드된 원본 사진이 없습니다. 아래에서 파일을 업로드하세요.")
+        else:
+            current = carousel_src[st.session_state.carousel_idx]
+            data_uri = img_file_to_data_uri(current)
+            badge = "변환본" if use_converted else "원본"
+            st.markdown(
+                f"<div style='text-align:center; color:#9B8F88; font-size:13px;'>({badge})</div>",
+                unsafe_allow_html=True
+            )
+            st.markdown(
+                f"""
+                <div style="display:flex;justify-content:center;">
+                  <div class="photo-frame" style="width:720px;max-width:90vw;">
+                    <img class="thumb" src="{data_uri}" style="width:100%;display:block;border-radius:10px;">
+                  </div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+            st.markdown(
+                f"<p style='text-align:center;'><b>{st.session_state.carousel_idx+1}/{n}</b></p>",
+                unsafe_allow_html=True
+            )
+
     with col_right:
-        if st.button("🖼️ 원본", key="btn_original"):
-            st.session_state.show_converted = False
-            st.session_state.carousel_idx = 0
+        if st.button("🖼️ 원본", key="btn_original", use_container_width=True):
+            if len(list_uploaded_paths()) == 0:
+                st.info("원본 사진이 없습니다. 먼저 업로드해 주세요.")
+            else:
+                st.session_state.show_converted = False
+                st.session_state.carousel_idx = 0
+                st.rerun()
+
+        st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+        if n_for_nav > 0 and st.button("▶", key="carousel_next", use_container_width=True):
+            st.session_state.carousel_idx = (st.session_state.carousel_idx + 1) % n_for_nav
             st.rerun()
 
-    # 캐러셀
-    st.markdown("<h2 style='text-align:center;'>In Loving Memory</h2>", unsafe_allow_html=True)
-    images = list_converted_only() if st.session_state.show_converted else [os.path.join(UPLOAD_FOLDER,f) for f in list_uploaded_only()]
-    n = len(images)
-    if "carousel_idx" not in st.session_state: st.session_state.carousel_idx = 0
-    if n == 0:
-        st.info("표시할 이미지가 없습니다. 사진을 업로드하세요.")
-    else:
-        prev, mid, nxt = st.columns([1,6,1])
-        with prev:
-            if st.button("◀", key="prev"): st.session_state.carousel_idx = (st.session_state.carousel_idx - 1) % n
-        with mid:
-            img = images[st.session_state.carousel_idx]
-            data_uri = img_file_to_data_uri(img)
-            st.markdown(f"<div style='text-align:center;'><img src='{data_uri}' style='max-width:80%;border-radius:12px;'></div>", unsafe_allow_html=True)
-            st.caption(f"{st.session_state.carousel_idx+1}/{n}")
-        with nxt:
-            if st.button("▶", key="next"): st.session_state.carousel_idx = (st.session_state.carousel_idx + 1) % n
+    # -------- 부고장 --------
+    st.subheader("📜 부고장")
+    safe_name = html.escape((pet_name or "").strip() or default_name)
+    st.markdown(f"""
+    <div style="text-align:center; background-color:#FAE8D9; padding:15px; border-radius:15px; margin:10px;">
+      사랑하는 <b>{safe_name}</b> 이(가) 무지개다리를 건넜습니다.<br>
+      함께한 시간들을 기억하며 따뜻한 마음으로 추모해주세요.<br><br>
+      🐾 <b>태어난 날:</b> {birth_date.isoformat()} <br>
+      🌈 <b>무지개다리 건넌 날:</b> {pass_date.isoformat()}
+    </div>
+    """, unsafe_allow_html=True)
 
+    # -------- 방명록 작성 --------
+    st.subheader("✍️ 방명록")
+    name = st.text_input("이름")
+    message = st.text_area("메시지")
+    if st.button("추모 메시지 남기기"):
+        if name and message:
+            with open("guestbook.txt", "a", encoding="utf-8") as f:
+                f.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}|{name}|{message}\n")
+            st.success("메시지가 등록되었습니다.")
+            st.rerun()
+        else:
+            st.warning("이름과 메시지를 입력해주세요.")
+
+    # -------- 방명록 목록 --------
+    st.subheader("📖 추모 메시지 모음")
+    try:
+        with open("guestbook.txt", "r", encoding="utf-8") as f:
+            guest_lines = [ln for ln in f.readlines() if ln.strip()]
+    except FileNotFoundError:
+        guest_lines = []
+
+    if guest_lines:
+        for idx, line in enumerate(reversed(guest_lines)):
+            try:
+                time_str, user, msg = line.strip().split("|", 2)
+            except Exception:
+                continue
+            col_msg, col_btn = st.columns([6, 1])
+            with col_msg:
+                safe_user = html.escape(user)
+                safe_time = html.escape(time_str)
+                safe_msg = html.escape(msg).replace("\n", "<br>")
+                st.markdown(f"""
+                <div class="guest-card">
+                    <div class="guest-card-header" style="display:flex; gap:12px; align-items:center; margin-bottom:6px;">
+                        <div class="guest-avatar" style="width:36px;height:36px;border-radius:50%;
+                             display:flex;align-items:center;justify-content:center;background:#FAE8D9;
+                             color:#6C5149;font-weight:700;box-shadow:0 2px 6px rgba(79,56,50,0.05);">🕊️</div>
+                        <div class="guest-name-time">
+                            <span class="guest-name" style="color:#4B3832;font-weight:700;">{safe_user}</span>
+                            <span class="guest-time" style="color:#9B8F88; font-size:12px; margin-left:6px;">· {safe_time}</span>
+                        </div>
+                    </div>
+                    <div class="guest-msg" style="margin-top:6px;padding:10px 12px;background:#FFF4ED;
+                         border:1px dashed #F0E0D7;border-radius:12px;color:#5A3E36;line-height:1.6;">
+                        {safe_msg}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            with col_btn:
+                if st.button("삭제", key=f"del_msg_{idx}"):
+                    real_idx = len(guest_lines) - 1 - idx
+                    del guest_lines[real_idx]
+                    with open("guestbook.txt", "w", encoding="utf-8") as f:
+                        f.writelines(guest_lines)
+                    st.rerun()
+    else:
+        st.info("아직 등록된 메시지가 없습니다.")
+
+    # -------- 업로드 전용 + 미리보기 --------
+    st.subheader("🖼️ 온라인 추모관")
+
+    with st.form("gallery_upload_only", clear_on_submit=True):
+        uploaded_files = st.file_uploader(
+            "사진 업로드 (PNG/JPG)", type=["png", "jpg", "jpeg"], accept_multiple_files=True
+        )
+        submit_upload = st.form_submit_button("업로드")
+
+    if submit_upload:
+        if not uploaded_files:
+            st.warning("업로드할 파일을 선택해 주세요.")
+        else:
+            saved, dup, errs = 0, 0, 0
+            existing = set(os.listdir(UPLOAD_FOLDER))
+            for uf in uploaded_files:
+                try:
+                    data = uf.getvalue()
+                    if not data:
+                        errs += 1
+                        continue
+                    digest = hashlib.sha256(data).hexdigest()[:16]
+                    safe_name = "".join(c for c in uf.name if c not in "\\/:*?\"<>|")
+                    filename = f"{digest}_{safe_name}"
+                    if any(name.startswith(digest + "_") for name in existing):
+                        dup += 1
+                        continue
+                    with open(os.path.join(UPLOAD_FOLDER, filename), "wb") as f:
+                        f.write(data)
+                    saved += 1
+                    existing.add(filename)
+                except Exception as e:
+                    errs += 1
+                    st.error(f"업로드 실패({uf.name}): {e}")
+
+            if saved: st.success(f"✅ {saved}장 업로드 완료!")
+            if dup:   st.info(f"ℹ️ 중복으로 제외된 사진: {dup}장")
+            if errs:  st.warning(f"⚠️ 저장 중 오류: {errs}장")
+            st.rerun()
+
+    # 업로드된 원본 미리보기 (3열 그리드)
+    originals = list_uploaded_only()
+    if originals:
+        st.caption(f"📂 업로드된 원본: {len(originals)}장")
+        for i in range(0, len(originals), 3):
+            cols = st.columns(3, gap="medium")
+            for j, fname in enumerate(originals[i:i+3]):
+                path = os.path.join(UPLOAD_FOLDER, fname)
+                with cols[j]:
+                    try:
+                        data_uri = img_file_to_data_uri(path)
+                        st.markdown(f"""
+                        <div class="frame-card">
+                          <div class="frame-edge">
+                            <img class="square-thumb" src="{data_uri}" alt="{html.escape(fname)}"/>
+                          </div>
+                          <div class="frame-meta">{html.escape(fname)}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        if st.button("삭제", key=f"del_origin_{i+j}"):
+                            try:
+                                os.remove(path)
+                                # 변환본도 스템 기준으로 함께 제거
+                                stem = converted_stem(fname)
+                                for cf in list(os.listdir(CONVERTED_FOLDER)):
+                                    if os.path.splitext(cf)[0] == stem:
+                                        os.remove(os.path.join(CONVERTED_FOLDER, cf))
+                                st.success("삭제되었습니다.")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"삭제 실패: {e}")
+                    except Exception as e:
+                        st.error(f"미리보기 실패({fname}): {e}")
+    else:
+        st.info("아직 업로드된 사진이 없습니다. 위에서 파일을 업로드하세요.")
+
+# ====== 탭2: 스트리밍 ======
 with tab2:
     st.header("📺 장례식 실시간 스트리밍")
-    video_url = st.text_input("YouTube 영상 URL", "https://www.youtube.com/embed/dQw4w9WgXcQ")
-    st.markdown(f"<div style='text-align:center;'><iframe width='560' height='315' src='{video_url}' frameborder='0' allowfullscreen></iframe></div>", unsafe_allow_html=True)
+    video_url = st.text_input("YouTube 영상 URL 입력", "https://www.youtube.com/embed/dQw4w9WgXcQ")
+    st.markdown(
+        f"<div style='text-align:center;'><iframe width='560' height='315' src='{video_url}' frameborder='0' allowfullscreen></iframe></div>",
+        unsafe_allow_html=True
+    )
