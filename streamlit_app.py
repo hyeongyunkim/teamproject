@@ -20,18 +20,26 @@ os.makedirs(CONVERTED_FOLDER, exist_ok=True)
 BASE_IMG_URL = "https://github.com/hyeongyunkim/teamproject/raw/main/petfuneral.png"
 INFO_PATH = "memorial_info.json"
 
-# -------------------- (보류) OpenAI 설정 --------------------
-# 나중에 다시 붙일 수 있도록 자리는 남겨둡니다. 현재 앱 동작에는 사용하지 않습니다.
+# -------------------- OpenAI 설정 (복구) --------------------
 def load_api_key() -> str:
+    key = None
     try:
         key = st.secrets.get("OPENAI_API_KEY")
     except Exception:
-        key = None
+        pass
     if not key:
         key = os.getenv("OPENAI_API_KEY", "")
     return (key or "").strip()
 
 OPENAI_API_KEY = load_api_key()
+client = None
+openai_import_error = None
+if OPENAI_API_KEY:
+    try:
+        from openai import OpenAI   # pip install openai>=1.0.0
+        client = OpenAI(api_key=OPENAI_API_KEY)
+    except Exception as e:
+        openai_import_error = e
 
 # -------------------- 유틸 --------------------
 def list_uploaded_only():
@@ -80,7 +88,7 @@ body { background-color: var(--bg); color: var(--ink); }
 .tagline{ font-size:18px; color:#6C5149; margin-bottom:14px; }
 .badges{ display:flex; gap:10px; flex-wrap:wrap; }
 .badge{ padding:6px 10px; border-radius:999px; font-weight:700; font-size:13px;
-  background:#fff; border:1px solid var(--line); box-shadow:0 2px 8px rgba(79,56,50,.05); color:#5A3E36; }
+  background:#fff; border:1px solid var(--line); box-shadow:0 2px 6px rgba(79,56,50,.05); color:#5A3E36; }
 .badge .dot{ width:8px; height:8px; border-radius:50%; background: var(--accent); }
 .hero-visual .kv img{ width:50%; display:block; }
 .photo-frame{ background:#fff; border:6px solid #F3E2D8; box-shadow:0 8px 18px rgba(79,56,50,0.12);
@@ -133,7 +141,7 @@ if st.sidebar.button("저장하기"):
     st.rerun()
 
 with st.sidebar.expander("🔎 상태"):
-    st.write("AI 변환 기능:", "현재 비활성화됨")  # 안내만 유지
+    st.write("OpenAI 클라이언트:", "OK" if client else ("오류" if openai_import_error else "없음"))
     if OPENAI_API_KEY:
         masked = OPENAI_API_KEY[:7] + "..." + OPENAI_API_KEY[-4:]
         st.caption(f"키 지문: {masked}")
@@ -186,7 +194,7 @@ with tab1:
         st.session_state.carousel_idx = 0
 
     if n == 0:
-        st.info("현재 표시할 변환 이미지가 없습니다. (AI 변환 기능은 비활성화됨)")
+        st.info("현재 표시할 변환 이미지가 없습니다. (AI 변환 기능은 추후 활성화 예정)")
     else:
         st.session_state.carousel_idx = max(0, min(st.session_state.carousel_idx, n - 1))
         prev, mid, nxt = st.columns([1, 6, 1])
@@ -342,7 +350,6 @@ with tab1:
                         if st.button("삭제", key=f"del_origin_{i+j}"):
                             try:
                                 os.remove(path)
-                                # 변환본과의 연결은 현재 사용 안 함 (변환 기능 비활성)
                                 st.success("삭제되었습니다.")
                                 st.rerun()
                             except Exception as e:
