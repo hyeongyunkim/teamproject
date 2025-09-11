@@ -8,7 +8,7 @@ import html
 import json
 import tempfile
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
 # -------------------- 기본 설정 --------------------
 st.set_page_config(page_title="반려동물 추모관", page_icon="🐾", layout="wide")
@@ -21,7 +21,7 @@ os.makedirs(CONVERTED_FOLDER, exist_ok=True)
 BASE_IMG_URL = "https://github.com/hyeongyunkim/teamproject/raw/main/petfuneral.png"
 INFO_PATH = "memorial_info.json"
 
-# -------------------- OpenAI 설정 (복구·활성) --------------------
+# -------------------- OpenAI 설정 --------------------
 def load_api_key() -> str:
     key = None
     try:
@@ -32,17 +32,32 @@ def load_api_key() -> str:
         key = os.getenv("OPENAI_API_KEY", "")
     return (key or "").strip()
 
+def load_org_id() -> str:
+    # 선택사항: secrets.toml 또는 환경변수에 OPENAI_ORG_ID 지정 가능 (권장)
+    org = None
+    try:
+        org = st.secrets.get("OPENAI_ORG_ID")
+    except Exception:
+        pass
+    if not org:
+        org = os.getenv("OPENAI_ORG_ID", "")
+    return (org or "").strip()
+
 OPENAI_API_KEY = load_api_key()
+OPENAI_ORG_ID = load_org_id()
 client = None
 openai_import_error = None
 if OPENAI_API_KEY:
     try:
         from openai import OpenAI  # pip install openai>=1.0.0
-        client = OpenAI(api_key=OPENAI_API_KEY)
+        if OPENAI_ORG_ID:
+            client = OpenAI(api_key=OPENAI_API_KEY, organization=OPENAI_ORG_ID)
+        else:
+            client = OpenAI(api_key=OPENAI_API_KEY)
     except Exception as e:
         openai_import_error = e
 
-# -------------------- 유틸 --------------------
+# -------------------- 파일 유틸 --------------------
 def list_uploaded_only():
     if not os.path.exists(UPLOAD_FOLDER):
         return []
@@ -50,7 +65,7 @@ def list_uploaded_only():
                    if f.lower().endswith((".png", ".jpg", ".jpeg"))])
 
 def list_converted_only():
-    """변환본: PNG/JPG 모두, 최신순으로 정렬"""
+    """변환본: PNG/JPG 모두, 최신순 정렬"""
     if not os.path.exists(CONVERTED_FOLDER):
         return []
     files = []
@@ -68,7 +83,6 @@ def img_file_to_data_uri(path: str) -> str:
         b64 = base64.b64encode(f.read()).decode("utf-8")
     return f"data:{mime};base64,{b64}"
 
-# 변환본 이름 규칙
 def converted_stem(src_filename: str) -> str:
     base, _ = os.path.splitext(src_filename)
     return f"{base}__converted"
@@ -76,22 +90,41 @@ def converted_stem(src_filename: str) -> str:
 def converted_png_name(src_filename: str) -> str:
     return converted_stem(src_filename) + ".png"
 
-# -------------------- 강한 만화책 리드로잉 프롬프트 --------------------
-COMIC_PROMPT = (
-    "FULL RE-ILLUSTRATION of the pet photo in EXTREME COMIC/MANGA style. "
-    "Use the original only as pose/silhouette reference. Completely redraw as if hand-drawn. "
-    "Strong bold black ink lines, thick clean outlines; high-contrast cel shading (2-3 tones only). "
-    "Flat, high-saturation colors. Halftone screen tones for shadows/background. "
-    "Cartoon exaggeration of features (cute but bold). Stylized simple background (white/flat/halftone). "
-    "No gradients, no blur, no photo textures, no realism. Looks like a printed Japanese manga page."
-)
+# -------------------- 이미지 변환 (방법 A + 폴백) --------------------
+def _save_temp_square_png(src_path: str, max_side: int = 1024) -> str:
+    """원본 비율 유지 + 흰 배경 정사각 캔버스(1024) PNG 임시 저장."""
+    with Image.open(src_path) as im:
+        im = im.convert("RGBA")
+        scale = min(max_side / im.width, max_side / im.height, 1.0)
+        new_w = int(im.width * scale)
+        new_h = int(im.height * scale)
+        im = im.resize((new_w, new_h), Image.LANCZOS)
 
-# -------------------- 단일 이미지 변환 함수 (안정화) --------------------
+        canvas = Image.new("RGBA", (max_side, max_side), (255, 255, 255, 255))
+        x = (max_side - new_w) // 2
+        y = (max_side - new_h) // 2
+        canvas.paste(im, (x, y))
+
+    t = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+    canvas.save(t.name, "PNG")
+    return t.name
+
+def _make_frame_mask_rgba(size: int = 1024, border: int = 24):
+    """images.edit 폴백용: 테두리(보존=불투명), 내부(편집=투명)"""
+    m = Image.new("L", (size, size), 0)  # 0=편집
+    d = ImageDraw.Draw(m)
+    # top/bottom/left/right 보존 테두리
+    d.rectangle([0, 0, size-1, border-1], fill=255)
+    d.rectangle([0, size-border, size-1, size-1], fill=255)
+    d.rectangle([0, border, border-1, size-border-1], fill=255)
+    d.rectangle([size-border, border, size-1, size-border-1], fill=255)
+    return m.convert("RGBA")
+
 def ai_redraw_comic_style(img_path: str, out_path: str):
     """
-    - 입력 이미지를 흑백 + 정사각 768로 전처리(사진 질감 영향 최소화)
-    - 전영역 편집(완전 투명 마스크)으로 강한 재그리기
-    - 출력은 .png로 강제 저장
+    기본: images.variations로 원본 포즈/구도 보존하며 만화풍 변형.
+    폴백: images.edit(+프레임 마스크)로 재그리기.
+    출력: .png로 강제 저장.
     """
     if client is None:
         raise RuntimeError("OpenAI 클라이언트가 준비되지 않았습니다. (OPENAI_API_KEY/조직 인증 확인)")
@@ -99,36 +132,57 @@ def ai_redraw_comic_style(img_path: str, out_path: str):
     if not out_path.lower().endswith(".png"):
         out_path = os.path.splitext(out_path)[0] + ".png"
 
-    # 전처리
-    with Image.open(img_path) as im:
-        im = im.convert("L")
-        im.thumbnail((768, 768), Image.LANCZOS)
-        canvas = Image.new("L", (768, 768), 255)
-        x = (768 - im.width) // 2
-        y = (768 - im.height) // 2
-        canvas.paste(im, (x, y))
-        preprocessed = canvas.convert("RGBA")
-
-    # 완전 투명 마스크
-    mask_img = Image.new("RGBA", (768, 768), (0, 0, 0, 0))
-
-    tmp_img = tmp_mask = None
+    tmp_img = None
+    tmp_mask = None
     try:
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as t_img:
-            preprocessed.save(t_img.name, "PNG")
-            tmp_img = t_img.name
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as t_mask:
-            mask_img.save(t_mask.name, "PNG")
-            tmp_mask = t_mask.name
+        tmp_img = _save_temp_square_png(img_path, max_side=1024)
 
-        with open(tmp_img, "rb") as f_img, open(tmp_mask, "rb") as f_mask:
-            resp = client.images.edit(
-                model="gpt-image-1",
-                image=f_img,
-                mask=f_mask,
-                prompt=COMIC_PROMPT,
-                size="1024x1024",
-            )
+        # 1) variations 시도
+        try:
+            with open(tmp_img, "rb") as f_img:
+                try:
+                    resp = client.images.variations(
+                        model="gpt-image-1",
+                        image=f_img,
+                        n=1,
+                        size="1024x1024",
+                        prompt=(
+                            "Stylize the variation into bold manga/comic style. "
+                            "Keep the same pose and composition as the input photo. "
+                            "Thick clean black lineart; 2–3 tone cel shading; "
+                            "flat high-saturation colors; halftone screen tones; "
+                            "simple background; no photo textures; no gradients."
+                        ),
+                    )
+                except Exception:
+                    # prompt 미지원 환경 → 프롬프트 없이 변형
+                    f_img.seek(0)
+                    resp = client.images.variations(
+                        model="gpt-image-1",
+                        image=f_img,
+                        n=1,
+                        size="1024x1024",
+                    )
+        except Exception:
+            # 2) 폴백: edit + 프레임 마스크
+            mask = _make_frame_mask_rgba(size=1024, border=24)
+            tmask = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+            mask.save(tmask.name, "PNG")
+            tmp_mask = tmask.name
+
+            with open(tmp_img, "rb") as f_img, open(tmp_mask, "rb") as f_mask:
+                resp = client.images.edit(
+                    model="gpt-image-1",
+                    image=f_img,
+                    mask=f_mask,
+                    size="1024x1024",
+                    prompt=(
+                        "Re-illustrate the photo inside the frame in bold manga/comic style. "
+                        "Preserve the pose and composition. Thick black lineart; 2–3 tone cel "
+                        "shading; flat high-saturation colors; halftone; simple background; "
+                        "no photo textures; no gradients."
+                    ),
+                )
 
         b64_img = resp.data[0].b64_json
         img_bytes = base64.b64decode(b64_img)
@@ -220,8 +274,7 @@ with st.sidebar.expander("🔎 상태"):
     if OPENAI_API_KEY:
         masked = OPENAI_API_KEY[:7] + "..." + OPENAI_API_KEY[-4:]
         st.caption(f"키 지문: {masked}")
-    else:
-        st.caption("OPENAI_API_KEY 미설정")
+    st.caption(f"조직 ID: {OPENAI_ORG_ID or '(미지정)'}")
 
 # -------------------- 히어로 --------------------
 try:
@@ -260,7 +313,7 @@ tab1, tab2 = st.tabs(["📜 부고장/방명록/추모관", "📺 장례식 스�
 
 # ====== 탭1 ======
 with tab1:
-    # === 상단 일괄 변환 버튼 (새 버전) ===
+    # === 상단 일괄 변환 버튼 ===
     st.markdown("### 🚀 상단 일괄 AI 변환")
     if st.button("모든 미변환 원본을 만화풍으로 변환하기"):
         if client is None:
@@ -270,7 +323,6 @@ with tab1:
             if not originals:
                 st.info("업로드된 원본 사진이 없습니다.")
             else:
-                # 이미 변환된(스템 기준) 제외
                 existing_stems = {os.path.splitext(f)[0] for f in os.listdir(CONVERTED_FOLDER)}
                 to_convert = [fn for fn in originals if converted_stem(fn) not in existing_stems]
 
@@ -291,7 +343,12 @@ with tab1:
                             ai_redraw_comic_style(in_path, out_path)
                             success += 1
                         except Exception as e:
-                            failures.append((fname, str(e)))
+                            msg = str(e)
+                            # 403/Verify 친화 안내
+                            if "must be verified" in msg or "403" in msg:
+                                msg = ("이미지 모델 접근 권한(조직 Verify/결제)이 필요합니다. "
+                                       "https://platform.openai.com/settings/organization/general 에서 인증 후 재시도하세요.")
+                            failures.append((fname, msg))
                         finally:
                             progress.progress(i / total)
 
@@ -303,7 +360,6 @@ with tab1:
                                 st.error(f"{fn} → {msg}")
                         st.info("실패가 있어 자동 새로고침을 하지 않았습니다. 오류 확인 후 다시 시도해 주세요.")
                     else:
-                        # 모두 성공: 캐러셀 최신(0번)으로 보내고 리런
                         st.session_state.carousel_idx = 0
                         st.rerun()
 
