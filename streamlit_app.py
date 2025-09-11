@@ -6,9 +6,8 @@ import mimetypes
 from datetime import datetime
 import html
 import json
-import tempfile
 
-from PIL import Image
+from PIL import Image  # (현재 변환 안 쓰지만, 나중 확장 대비)
 
 # -------------------- 기본 설정 --------------------
 st.set_page_config(page_title="반려동물 추모관", page_icon="🐾", layout="wide")
@@ -21,26 +20,18 @@ os.makedirs(CONVERTED_FOLDER, exist_ok=True)
 BASE_IMG_URL = "https://github.com/hyeongyunkim/teamproject/raw/main/petfuneral.png"
 INFO_PATH = "memorial_info.json"
 
-# -------------------- OpenAI 설정 --------------------
+# -------------------- (보류) OpenAI 설정 --------------------
+# 나중에 다시 붙일 수 있도록 자리는 남겨둡니다. 현재 앱 동작에는 사용하지 않습니다.
 def load_api_key() -> str:
-    key = None
     try:
         key = st.secrets.get("OPENAI_API_KEY")
     except Exception:
-        pass
+        key = None
     if not key:
         key = os.getenv("OPENAI_API_KEY", "")
     return (key or "").strip()
 
 OPENAI_API_KEY = load_api_key()
-client = None
-openai_import_error = None
-if OPENAI_API_KEY:
-    try:
-        from openai import OpenAI  # pip install openai>=1.0.0
-        client = OpenAI(api_key=OPENAI_API_KEY)
-    except Exception as e:
-        openai_import_error = e
 
 # -------------------- 유틸 --------------------
 def list_uploaded_only():
@@ -50,14 +41,13 @@ def list_uploaded_only():
                    if f.lower().endswith((".png", ".jpg", ".jpeg"))])
 
 def list_converted_only():
-    """변환본: PNG/JPG 모두, 최신순으로 정렬"""
+    """변환본: PNG/JPG 모두, 최신순으로 정렬 (현재 변환 기능 없음)"""
     if not os.path.exists(CONVERTED_FOLDER):
         return []
     files = []
     for f in os.listdir(CONVERTED_FOLDER):
         if f.lower().endswith((".png", ".jpg", ".jpeg")):
             files.append(os.path.join(CONVERTED_FOLDER, f))
-    # 최신순(수정시간 내림차순)
     files.sort(key=lambda p: os.path.getmtime(p), reverse=True)
     return files
 
@@ -69,89 +59,13 @@ def img_file_to_data_uri(path: str) -> str:
         b64 = base64.b64encode(f.read()).decode("utf-8")
     return f"data:{mime};base64,{b64}"
 
-def converted_stem(src_filename: str) -> str:
-    """원본 파일명(확장자 제외) + '__converted' -> 확장자 없이 스템 문자열"""
-    base, _ = os.path.splitext(src_filename)
-    return f"{base}__converted"
-
-def converted_png_name(src_filename: str) -> str:
-    return converted_stem(src_filename) + ".png"
-
-# -------------------- 강한 만화책 리드로잉 프롬프트 --------------------
-COMIC_PROMPT = (
-    "FULL RE-ILLUSTRATION of the pet photo in EXTREME COMIC/MANGA style. "
-    "Use the original only as pose/silhouette reference. Completely redraw as if hand-drawn. "
-    "Strong bold black ink lines, thick clean outlines; high-contrast cel shading (2-3 tones only). "
-    "Flat, high-saturation colors. Halftone screen tones for shadows/background. "
-    "Cartoon exaggeration of features (cute but bold). Stylized simple background (white/flat/halftone). "
-    "No gradients, no blur, no photo textures, no realism. Looks like a printed Japanese manga page."
-)
-
-# -------------------- 전처리 + 임시 PNG 마스크로 안정적 edit --------------------
-def ai_redraw_comic_style(img_path: str, out_path: str):
-    if client is None:
-        if not OPENAI_API_KEY:
-            raise RuntimeError("OPENAI_API_KEY가 설정되어 있지 않습니다.")
-        if openai_import_error:
-            raise RuntimeError(f"openai 라이브러리 문제: {openai_import_error}")
-        raise RuntimeError("OpenAI 클라이언트 초기화 실패")
-
-    # out_path를 png로 강제
-    if not out_path.lower().endswith(".png"):
-        out_path = os.path.splitext(out_path)[0] + ".png"
-
-    # 전처리(흑백 + 정사각 768)
-    with Image.open(img_path) as im:
-        im = im.convert("L")
-        im.thumbnail((768, 768), Image.LANCZOS)
-        canvas = Image.new("L", (768, 768), 255)
-        x = (768 - im.width) // 2
-        y = (768 - im.height) // 2
-        canvas.paste(im, (x, y))
-        preprocessed = canvas.convert("RGBA")
-
-    # 전영역 편집용 완전 투명 마스크
-    mask_img = Image.new("RGBA", (768, 768), (0, 0, 0, 0))
-
-    tmp_img_path = None
-    tmp_mask_path = None
-    try:
-        import tempfile
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as t_img:
-            preprocessed.save(t_img.name, "PNG")
-            tmp_img_path = t_img.name
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as t_mask:
-            mask_img.save(t_mask.name, "PNG")
-            tmp_mask_path = t_mask.name
-
-        with open(tmp_img_path, "rb") as f_img, open(tmp_mask_path, "rb") as f_mask:
-            resp = client.images.edit(
-                model="gpt-image-1",
-                image=f_img,
-                mask=f_mask,
-                prompt=COMIC_PROMPT,
-                size="1024x1024",
-            )
-
-        b64_img = resp.data[0].b64_json
-        img_bytes = base64.b64decode(b64_img)
-        os.makedirs(CONVERTED_FOLDER, exist_ok=True)  # 저장 폴더 보장
-        with open(out_path, "wb") as out:
-            out.write(img_bytes)
-
-    finally:
-        for p in (tmp_img_path, tmp_mask_path):
-            try:
-                if p and os.path.exists(p):
-                    os.remove(p)
-            except Exception:
-                pass
-
 # -------------------- 스타일(CSS) --------------------
 st.markdown("""
 <style>
-:root{ --bg:#FDF6EC; --ink:#4B3832; --accent:#CFA18D; --accent-2:#FAE8D9; --line:#EED7CA;
---shadow:0 10px 24px rgba(79,56,50,0.12);}
+:root{
+  --bg:#FDF6EC; --ink:#4B3832; --accent:#CFA18D; --accent-2:#FAE8D9; --line:#EED7CA;
+  --shadow:0 10px 24px rgba(79,56,50,0.12);
+}
 body { background-color: var(--bg); color: var(--ink); }
 .page-wrap{ max-width:1180px; margin:0 auto; }
 .topbar-fixed { position:fixed; top:0; left:0; right:0; height:60px;
@@ -210,14 +124,16 @@ pass_date = st.sidebar.date_input("무지개다리 건넌 날", value=default_pa
 
 if st.sidebar.button("저장하기"):
     with open(INFO_PATH, "w", encoding="utf-8") as f:
-        json.dump({"name": (pet_name or "").strip() or default_name,
-                   "birth": birth_date.isoformat(),
-                   "pass":  pass_date.isoformat()}, f, ensure_ascii=False, indent=2)
+        json.dump({
+            "name": (pet_name or "").strip() or default_name,
+            "birth": birth_date.isoformat(),
+            "pass":  pass_date.isoformat()
+        }, f, ensure_ascii=False, indent=2)
     st.sidebar.success("저장 완료!")
     st.rerun()
 
 with st.sidebar.expander("🔎 상태"):
-    st.write("OpenAI 클라이언트:", "OK" if client else ("오류" if openai_import_error else "없음"))
+    st.write("AI 변환 기능:", "현재 비활성화됨")  # 안내만 유지
     if OPENAI_API_KEY:
         masked = OPENAI_API_KEY[:7] + "..." + OPENAI_API_KEY[-4:]
         st.caption(f"키 지문: {masked}")
@@ -261,7 +177,7 @@ tab1, tab2 = st.tabs(["📜 부고장/방명록/추모관", "📺 장례식 스�
 
 # ====== 탭1 ======
 with tab1:
-    # 캐러셀 (변환본만)
+    # 캐러셀 (현재는 변환본만 표시, 변환 기능 비활성 상태)
     st.markdown("<h2 style='text-align:center;'>In Loving Memory</h2>", unsafe_allow_html=True)
     converted_list = list_converted_only()
     n = len(converted_list)
@@ -269,13 +185,10 @@ with tab1:
     if "carousel_idx" not in st.session_state:
         st.session_state.carousel_idx = 0
 
-    # 인덱스 보정
     if n == 0:
-        st.session_state.carousel_idx = 0
+        st.info("현재 표시할 변환 이미지가 없습니다. (AI 변환 기능은 비활성화됨)")
     else:
         st.session_state.carousel_idx = max(0, min(st.session_state.carousel_idx, n - 1))
-
-    if n > 0:
         prev, mid, nxt = st.columns([1, 6, 1])
         with prev:
             if st.button("◀", key="carousel_prev"):
@@ -288,12 +201,13 @@ with tab1:
                 <img class="thumb" src="{data_uri}">
             </div>
             """, unsafe_allow_html=True)
-            st.markdown(f"<p style='text-align:center;'><b>{st.session_state.carousel_idx+1}/{n}</b></p>", unsafe_allow_html=True)
+            st.markdown(
+                f"<p style='text-align:center;'><b>{st.session_state.carousel_idx+1}/{n}</b></p>",
+                unsafe_allow_html=True
+            )
         with nxt:
             if st.button("▶", key="carousel_next"):
                 st.session_state.carousel_idx = (st.session_state.carousel_idx + 1) % n
-    else:
-        st.info("아직 변환된 사진이 없습니다. 아래 '온라인 추모관'에서 업로드 후 ‘모두 AI 변환’을 눌러주세요.")
 
     # 부고장
     st.subheader("📜 부고장")
@@ -370,7 +284,9 @@ with tab1:
     st.subheader("🖼️ 온라인 추모관")
 
     with st.form("gallery_upload_only", clear_on_submit=True):
-        uploaded_files = st.file_uploader("사진 업로드 (PNG/JPG)", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
+        uploaded_files = st.file_uploader(
+            "사진 업로드 (PNG/JPG)", type=["png", "jpg", "jpeg"], accept_multiple_files=True
+        )
         submit_upload = st.form_submit_button("업로드")
 
     if submit_upload:
@@ -399,15 +315,15 @@ with tab1:
                     errs += 1
                     st.error(f"업로드 실패({uf.name}): {e}")
 
-            if saved: st.success(f"✅ {saved}장 업로드 완료! 아래 ‘모두 AI 변환’을 눌러 만화풍으로 변환하세요.")
+            if saved: st.success(f"✅ {saved}장 업로드 완료!")
             if dup:   st.info(f"ℹ️ 중복으로 제외된 사진: {dup}장")
             if errs:  st.warning(f"⚠️ 저장 중 오류: {errs}장")
             st.rerun()
 
-    # 업로드된 원본 미리보기
+    # 업로드된 원본 미리보기 (3열 그리드)
     originals = list_uploaded_only()
     if originals:
-        st.caption(f"📂 업로드된 원본: {len(originals)}장 (아래 이미지는 변환 전 원본입니다)")
+        st.caption(f"📂 업로드된 원본: {len(originals)}장")
         for i in range(0, len(originals), 3):
             cols = st.columns(3, gap="medium")
             for j, fname in enumerate(originals[i:i+3]):
@@ -426,11 +342,7 @@ with tab1:
                         if st.button("삭제", key=f"del_origin_{i+j}"):
                             try:
                                 os.remove(path)
-                                # 변환본은 확장자 무관 스템으로 정리
-                                stem = converted_stem(fname)
-                                for f in list(os.listdir(CONVERTED_FOLDER)):
-                                    if os.path.splitext(f)[0] == stem:
-                                        os.remove(os.path.join(CONVERTED_FOLDER, f))
+                                # 변환본과의 연결은 현재 사용 안 함 (변환 기능 비활성)
                                 st.success("삭제되었습니다.")
                                 st.rerun()
                             except Exception as e:
@@ -439,61 +351,6 @@ with tab1:
                         st.error(f"미리보기 실패({fname}): {e}")
     else:
         st.info("아직 업로드된 사진이 없습니다. 위에서 파일을 업로드하세요.")
-
-    st.caption("💡 업로드만 먼저 하고, 아래 ‘모두 AI 변환’ 버튼으로 일괄 변환할 수 있어요.")
-
-    # -------------------- 모두 AI 변환 --------------------
-    st.caption("💡 '모두 AI 변환'을 누르면 미변환 원본만 만화책 리드로잉으로 일괄 변환합니다. (OpenAI 전용)")
-    if st.button("모두 AI 변환"):
-        if client is None:
-            st.error("❌ OpenAI가 준비되지 않았습니다. (OPENAI_API_KEY/조직 인증 확인)")
-        else:
-            originals_for_bulk = list_uploaded_only()
-            if not originals_for_bulk:
-                st.info("업로드된 원본 사진이 없습니다.")
-            else:
-                n_before = len(list_converted_only())
-
-                # 이미 변환된 스템 목록(확장자 무시)
-                existing_stems = {os.path.splitext(f)[0] for f in os.listdir(CONVERTED_FOLDER)}
-                to_convert = [img_file for img_file in originals_for_bulk
-                              if converted_stem(img_file) not in existing_stems]
-
-                if not to_convert:
-                    st.info("변환할 원본이 없습니다. (모두 이미 변환됨)")
-                else:
-                    progress = st.progress(0)
-                    status = st.empty()
-                    done, failed = 0, 0
-                    total = len(to_convert)
-
-                    for idx, img_file in enumerate(to_convert, start=1):
-                        in_path  = os.path.join(UPLOAD_FOLDER, img_file)
-                        out_name = converted_png_name(img_file)
-                        out_path = os.path.join(CONVERTED_FOLDER, out_name)
-                        try:
-                            status.write(f"변환 중 {idx}/{total} : {html.escape(img_file)}")
-                            ai_redraw_comic_style(in_path, out_path)
-                            done += 1
-                        except Exception as e:
-                            failed += 1
-                            st.error(f"⚠️ {img_file} 변환 실패: {e}")
-                        finally:
-                            progress.progress(idx / total)
-
-                    # 간단 디버그: 변환 폴더 파일 수 표기
-                    st.warning(f"변환 폴더 파일 수: {len(os.listdir(CONVERTED_FOLDER))}")
-
-                    if done:
-                        st.success(f"변환 완료: {done}장" + (f" · 실패 {failed}장" if failed else ""))
-                    else:
-                        st.error("변환에 실패했습니다. (오류 메시지를 확인해 주세요)")
-
-                    # 새 항목으로 캐러셀 이동
-                    new_n = len(list_converted_only())
-                    if new_n > n_before:
-                        st.session_state.carousel_idx = 0  # 최신순이므로 0번이 방금 변환본
-                    st.rerun()
 
 # ====== 탭2: 스트리밍 ======
 with tab2:
