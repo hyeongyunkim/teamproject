@@ -7,9 +7,16 @@ from datetime import datetime
 import html
 import json
 import tempfile
+import traceback
 
 from PIL import Image
 from io import BytesIO
+
+# 외부 URL 저장 대비
+try:
+    import requests
+except Exception:
+    requests = None
 
 # -------------------- 기본 설정 --------------------
 st.set_page_config(page_title="반려동물 추모관", page_icon="🐾", layout="wide")
@@ -55,13 +62,14 @@ def list_uploaded_only():
 def list_converted_only():
     if not os.path.exists(CONVERTED_FOLDER):
         return []
-    # 변환본은 규칙적으로 __converted.png 로 저장
     files = [
         os.path.join(CONVERTED_FOLDER, f)
         for f in os.listdir(CONVERTED_FOLDER)
         if f.lower().endswith(".png")
     ]
-    return sorted(files)
+    # mtime 기준 최신순 정렬 (새로 변환한 게 캐러셀 앞쪽에 오도록)
+    files.sort(key=lambda p: os.path.getmtime(p), reverse=False)
+    return files
 
 def img_file_to_data_uri(path: str) -> str:
     mime, _ = mimetypes.guess_type(path)
@@ -71,10 +79,14 @@ def img_file_to_data_uri(path: str) -> str:
         b64 = base64.b64encode(f.read()).decode("utf-8")
     return f"data:{mime};base64,{b64}"
 
-# 변환본 파일명 규칙: <원본이름(확장자제외)>__converted.png
+# 변환본 파일명 규칙: <원본(확장자제외)>__converted.png
 def converted_png_name(src_filename: str) -> str:
     base, _ = os.path.splitext(src_filename)
     return f"{base}__converted.png"
+
+def ensure_dirs():
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+    os.makedirs(CONVERTED_FOLDER, exist_ok=True)
 
 # -------------------- 강한 만화책 리드로잉 프롬프트 --------------------
 COMIC_PROMPT = (
@@ -91,12 +103,14 @@ COMIC_PROMPT = (
 # -------------------- 전처리 + 임시 PNG 마스크로 안정적 edit --------------------
 def ai_redraw_comic_style(img_path: str, out_path: str):
     """
-    - 입력 이미지를 흑백 + 축소(최대 768)로 전처리 → 사진 질감 영향 최소화
-    - 정사각 768 캔버스 중앙 정렬 (비율 보정)
-    - 전영역 편집용 완전 투명 마스크 생성
-    - 임시 PNG 파일로 OpenAI images.edit 호출
-    - out_path 확장자는 .png 로 강제
+    - 입력 이미지를 흑백 + 축소(최대 768)로 전처리
+    - 정사각 768 캔버스 중앙 정렬
+    - 전영역 편집용 완전 투명 마스크
+    - OpenAI images.edit 호출 (b64_json 우선, url 응답도 처리)
+    - out_path는 항상 .png
     """
+    ensure_dirs()
+
     if client is None:
         if not OPENAI_API_KEY:
             raise RuntimeError("OPENAI_API_KEY가 설정되어 있지 않습니다.")
@@ -132,6 +146,7 @@ def ai_redraw_comic_style(img_path: str, out_path: str):
             mask_img.save(t_mask.name, "PNG")
             tmp_mask_path = t_mask.name
 
+        # ---- OpenAI 호출 (b64_json 명시) ----
         with open(tmp_img_path, "rb") as f_img, open(tmp_mask_path, "rb") as f_mask:
             resp = client.images.edit(
                 model="gpt-image-1",
@@ -139,12 +154,44 @@ def ai_redraw_comic_style(img_path: str, out_path: str):
                 mask=f_mask,
                 prompt=COMIC_PROMPT,
                 size="1024x1024",
+                response_format="b64_json",  # ← 명시
             )
 
-        b64_img = resp.data[0].b64_json
-        img_bytes = base64.b64decode(b64_img)
+        # ---- 응답 검증 및 저장 ----
+        if not hasattr(resp, "data") or not resp.data:
+            raise RuntimeError(f"OpenAI 응답에 data가 없습니다: {resp}")
+
+        item = resp.data[0]
+        img_bytes = None
+
+        # 1) b64_json 우선
+        if hasattr(item, "b64_json") and item.b64_json:
+            try:
+                img_bytes = base64.b64decode(item.b64_json)
+            except Exception as e:
+                raise RuntimeError(f"b64_json 디코딩 실패: {e}")
+
+        # 2) fallback: url (일부 환경)
+        elif hasattr(item, "url") and item.url:
+            if requests is None:
+                raise RuntimeError("이미지 URL 응답을 받았지만 requests가 설치되어 있지 않습니다. pip install requests 후 재시도하세요.")
+            try:
+                r = requests.get(item.url, timeout=30)
+                r.raise_for_status()
+                img_bytes = r.content
+            except Exception as e:
+                raise RuntimeError(f"URL로 이미지 다운로드 실패: {e}")
+
+        else:
+            raise RuntimeError(f"알 수 없는 이미지 응답 형식: {item}")
+
         with open(out_path, "wb") as out:
             out.write(img_bytes)
+
+    except Exception as e:
+        # 보다 풍부한 디버그 정보
+        tb = traceback.format_exc()
+        raise RuntimeError(f"이미지 변환 중 오류: {e}\n\n--- Traceback ---\n{tb}") from e
 
     finally:
         for p in (tmp_img_path, tmp_mask_path):
@@ -280,7 +327,7 @@ with tab1:
     if "carousel_idx" not in st.session_state:
         st.session_state.carousel_idx = 0
 
-    # ✅ 캐러셀 인덱스 범위 보정
+    # 캐러셀 인덱스 범위 보정
     if n == 0:
         st.session_state.carousel_idx = 0
     else:
@@ -396,7 +443,7 @@ with tab1:
         if not uploaded_files:
             st.warning("업로드할 파일을 선택해 주세요.")
         else:
-            os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+            ensure_dirs()
             saved, dup, errs = 0, 0, 0
             existing = set(os.listdir(UPLOAD_FOLDER))
             for uf in uploaded_files:
@@ -477,10 +524,9 @@ with tab1:
             if not originals_for_bulk:
                 st.info("업로드된 원본 사진이 없습니다.")
             else:
-                # 변환 전 캐러셀 길이 기록
+                ensure_dirs()
                 n_before = len(list_converted_only())
 
-                # 이미 변환된 파일 제외
                 converted_names = set(os.listdir(CONVERTED_FOLDER)) if os.path.exists(CONVERTED_FOLDER) else set()
                 to_convert = []
                 for img_file in originals_for_bulk:
@@ -498,7 +544,7 @@ with tab1:
 
                     for i, img_file in enumerate(to_convert, start=1):
                         in_path  = os.path.join(UPLOAD_FOLDER, img_file)
-                        out_name = converted_png_name(img_file)  # 규칙 적용
+                        out_name = converted_png_name(img_file)
                         out_path = os.path.join(CONVERTED_FOLDER, out_name)
                         try:
                             status.write(f"변환 중 {i}/{total} : {html.escape(img_file)}")
@@ -506,30 +552,4 @@ with tab1:
                             done += 1
                         except Exception as e:
                             failed += 1
-                            st.error(f"⚠️ {img_file} 변환 실패: {e}")
-                        finally:
-                            progress.progress(i / total)
-
-                    if done:
-                        st.success(f"변환 완료: {done}장" + (f" · 실패 {failed}장" if failed else ""))
-                    else:
-                        st.error("변환에 실패했습니다. (오류 메시지를 확인해 주세요)")
-
-                    # 변환 후 새 항목으로 캐러셀 이동
-                    try:
-                        new_n = len(list_converted_only())
-                        if new_n > n_before:
-                            st.session_state.carousel_idx = max(n_before, 0)
-                    except Exception:
-                        pass
-
-                    st.rerun()
-
-# ====== 탭2: 스트리밍 ======
-with tab2:
-    st.header("📺 장례식 실시간 스트리밍")
-    video_url = st.text_input("YouTube 영상 URL 입력", "https://www.youtube.com/embed/dQw4w9WgXcQ")
-    st.markdown(
-        f"<div style='text-align:center;'><iframe width='560' height='315' src='{video_url}' frameborder='0' allowfullscreen></iframe></div>",
-        unsafe_allow_html=True
-    )
+                            # 상세 에
